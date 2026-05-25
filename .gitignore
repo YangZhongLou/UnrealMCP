@@ -2,3 +2,5 @@
 *.exe
 *.pdb
 MCP_Server/target/
+UnrealPlugin/Build/
+UnrealPlugin/Config/
