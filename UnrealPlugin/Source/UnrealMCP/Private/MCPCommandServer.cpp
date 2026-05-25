@@ -85,7 +85,7 @@ bool FMCPCommandServer::Init()
     }
 
     ListenAddr = SocketSubsystem->CreateInternetAddr();
-    ListenAddr->SetLoopbackAddress(true);
+    ListenAddr->SetLoopbackAddress();
     ListenAddr->SetPort(ServerPort);
 
     ListenSocket->SetReuseAddr(true);

@@ -1,6 +1,7 @@
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
@@ -310,9 +311,11 @@ FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params)
         {
             for (TActorIterator<AActor> It(World); It; ++It)
             {
-                if (It->GetName() == Name)
+                AActor* Actor = *It;
+                if (Actor->GetName() == Name)
                 {
-                    Found = &(*It);
+                    SpawnedActors.Add(Name, Actor);
+                    Found = SpawnedActors.Find(Name);
                     break;
                 }
             }

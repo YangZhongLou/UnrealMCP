@@ -1,6 +1,5 @@
 #include "UnrealMCP.h"
 #include "MCPCommandServer.h"
-#include "Logging/LogMacros.h"
 
 DEFINE_LOG_CATEGORY(LogUnrealMCP);
 

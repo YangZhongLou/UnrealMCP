@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Engine/Blueprint.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Dom/JsonObject.h"
@@ -40,7 +41,8 @@ FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":false,\"error\":\"Failed to create blueprint\"}");
     }
 
-    FAssetRegistryModule::AssetCreated(Blueprint);
+    FAssetRegistryModule& AssetRegModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    AssetRegModule.AssetCreated(Blueprint);
     Package->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);

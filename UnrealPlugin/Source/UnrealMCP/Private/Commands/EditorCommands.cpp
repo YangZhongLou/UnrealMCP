@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Editor.h"
+#include "FileHelpers.h"
 #include "LevelEditorViewport.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -49,7 +50,7 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
     if (GEditor)
     {
-        GEditor->PlayInEditor(PIE_PlayInExistingProcess);
+        GEditor->RequestPlaySession(FRequestPlaySessionParams());
         return TEXT("{\"success\":true,\"result\":{\"playing\":true}}");
     }
     return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
