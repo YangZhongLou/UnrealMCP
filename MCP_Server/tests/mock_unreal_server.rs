@@ -83,6 +83,37 @@ impl MockUnrealServer {
                                         "success": true,
                                         "result": {"opened": true}
                                     }),
+                                    "get_asset_list" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "assets": [
+                                                {"name": "BP_Player", "class": "Blueprint", "path": "/Game/BP_Player"},
+                                                {"name": "M_Ground", "class": "Material", "path": "/Game/M_Ground"}
+                                            ],
+                                            "count": 2
+                                        }
+                                    }),
+                                    "get_asset_info" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "name": "BP_Player",
+                                            "path": "/Game/BP_Player",
+                                            "class": "Blueprint",
+                                            "package_path": "/Game"
+                                        }
+                                    }),
+                                    "delete_asset" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"deleted": true}
+                                    }),
+                                    "rename_asset" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"renamed": true}
+                                    }),
                                     _ => json!({
                                         "id": req["id"],
                                         "success": false,

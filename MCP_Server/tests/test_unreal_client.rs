@@ -18,6 +18,61 @@ async fn test_tcp_connection_and_command() {
 }
 
 #[tokio::test]
+async fn test_get_asset_list() {
+    let mock = MockUnrealServer::start(13384).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13384");
+    let response = client.send_command("get_asset_list", json!({
+        "path": "/Game"
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    let assets = response["result"]["assets"].as_array().unwrap();
+    assert_eq!(assets.len(), 2);
+    assert_eq!(assets[0]["name"], "BP_Player");
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_get_asset_info() {
+    let mock = MockUnrealServer::start(13385).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13385");
+    let response = client.send_command("get_asset_info", json!({
+        "path": "/Game/BP_Player"
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["name"], "BP_Player");
+    assert_eq!(response["result"]["class"], "Blueprint");
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_delete_and_rename_asset() {
+    let mock = MockUnrealServer::start(13386).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13386");
+
+    // delete
+    let response = client.send_command("delete_asset", json!({
+        "path": "/Game/OldAsset"
+    })).await.unwrap();
+    assert_eq!(response["success"], true);
+
+    // rename
+    let response = client.send_command("rename_asset", json!({
+        "path": "/Game/OldName",
+        "newName": "NewName"
+    })).await.unwrap();
+    assert_eq!(response["success"], true);
+
+    mock.stop().await;
+}
+
+#[tokio::test]
 async fn test_set_and_get_actor_property() {
     let mock = MockUnrealServer::start(13381).await;
 
