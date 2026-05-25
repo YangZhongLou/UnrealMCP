@@ -401,6 +401,110 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Set an actor property value")]
+    async fn set_actor_property(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Property name, e.g. 'Intensity', 'LightColor'")]
+        property_name: String,
+        #[tool(param)]
+        #[schemars(description = "Property value (number, string, or array)")]
+        value: serde_json::Value,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("set_actor_property", json!({
+            "actorName": actor_name,
+            "propertyName": property_name,
+            "value": value
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Property set successfully".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get an actor property value")]
+    async fn get_actor_property(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Property name")]
+        property_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_actor_property", json!({
+            "actorName": actor_name,
+            "propertyName": property_name
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Property value: {}", response["result"]["value"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Duplicate an actor by name")]
+    async fn duplicate_actor(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name to duplicate")]
+        name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional new name for the duplicate")]
+        new_name: Option<String>,
+    ) -> String {
+        let mut params = json!({"name": name});
+        if let Some(n) = new_name {
+            params["newName"] = json!(n);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("duplicate_actor", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Duplicated actor: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Open a level by path")]
+    async fn open_level(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Level path, e.g. '/Game/Maps/MyMap'")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("open_level", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Level opened successfully".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]

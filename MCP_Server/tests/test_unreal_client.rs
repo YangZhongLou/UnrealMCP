@@ -18,6 +18,61 @@ async fn test_tcp_connection_and_command() {
 }
 
 #[tokio::test]
+async fn test_set_and_get_actor_property() {
+    let mock = MockUnrealServer::start(13381).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13381");
+
+    // set property
+    let response = client.send_command("set_actor_property", json!({
+        "actorName": "TestLight",
+        "propertyName": "Intensity",
+        "value": {"FloatValue": 5000.0}
+    })).await.unwrap();
+    assert_eq!(response["success"], true);
+
+    // get property
+    let response = client.send_command("get_actor_property", json!({
+        "actorName": "TestLight",
+        "propertyName": "Intensity"
+    })).await.unwrap();
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["value"], 5000.0);
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_duplicate_actor() {
+    let mock = MockUnrealServer::start(13382).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13382");
+    let response = client.send_command("duplicate_actor", json!({
+        "name": "TestLight",
+        "newName": "TestLight_Copy"
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["actor_name"], "TestLight_Copy");
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_open_level() {
+    let mock = MockUnrealServer::start(13383).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13383");
+    let response = client.send_command("open_level", json!({
+        "path": "/Game/Maps/TestMap"
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+
+    mock.stop().await;
+}
+
+#[tokio::test]
 async fn test_spawn_actor() {
     let mock = MockUnrealServer::start(13379).await;
 

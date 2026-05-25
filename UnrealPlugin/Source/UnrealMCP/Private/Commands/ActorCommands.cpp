@@ -100,6 +100,204 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
     return Out;
 }
 
+FString HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    FString PropertyName = Params->GetStringField(TEXT("propertyName"));
+
+    AActor* Actor = nullptr;
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (World)
+    {
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName)
+            {
+                Actor = *It;
+                break;
+            }
+        }
+    }
+
+    if (!Actor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    }
+
+    FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
+    if (!Property)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Property not found: %s\"}"), *PropertyName);
+    }
+
+    TSharedPtr<FJsonObject> ValueObj = Params->GetObjectField(TEXT("value"));
+    if (ValueObj->HasField(TEXT("FloatValue")))
+    {
+        float FloatValue = ValueObj->GetNumberField(TEXT("FloatValue"));
+        if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            FloatProp->SetPropertyValue_InContainer(Actor, FloatValue);
+        }
+    }
+    else if (ValueObj->HasField(TEXT("IntValue")))
+    {
+        int32 IntValue = ValueObj->GetIntegerField(TEXT("IntValue"));
+        if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            IntProp->SetPropertyValue_InContainer(Actor, IntValue);
+        }
+    }
+    else if (ValueObj->HasField(TEXT("StringValue")))
+    {
+        FString StringValue = ValueObj->GetStringField(TEXT("StringValue"));
+        if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            StrProp->SetPropertyValue_InContainer(Actor, StringValue);
+        }
+    }
+    else if (ValueObj->HasField(TEXT("BoolValue")))
+    {
+        bool BoolValue = ValueObj->GetBoolField(TEXT("BoolValue"));
+        if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            BoolProp->SetPropertyValue_InContainer(Actor, BoolValue);
+        }
+    }
+
+    return TEXT("{\"success\":true,\"result\":{\"set\":true}}");
+}
+
+FString HandleGetActorProperty(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    FString PropertyName = Params->GetStringField(TEXT("propertyName"));
+
+    AActor* Actor = nullptr;
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (World)
+    {
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName)
+            {
+                Actor = *It;
+                break;
+            }
+        }
+    }
+
+    if (!Actor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    }
+
+    FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
+    if (!Property)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Property not found: %s\"}"), *PropertyName);
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+
+    if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+    {
+        float Value = FloatProp->GetPropertyValue_InContainer(Actor);
+        Result->SetNumberField(TEXT("value"), Value);
+    }
+    else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+    {
+        int32 Value = IntProp->GetPropertyValue_InContainer(Actor);
+        Result->SetNumberField(TEXT("value"), Value);
+    }
+    else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+    {
+        FString Value = StrProp->GetPropertyValue_InContainer(Actor);
+        Result->SetStringField(TEXT("value"), Value);
+    }
+    else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+    {
+        bool Value = BoolProp->GetPropertyValue_InContainer(Actor);
+        Result->SetBoolField(TEXT("value"), Value);
+    }
+    else
+    {
+        Result->SetStringField(TEXT("value"), TEXT("Unsupported property type"));
+    }
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Name = Params->GetStringField(TEXT("name"));
+    FString NewName = Params->GetStringField(TEXT("newName"));
+
+    AActor* SourceActor = nullptr;
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (World)
+    {
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == Name)
+            {
+                SourceActor = *It;
+                break;
+            }
+        }
+    }
+
+    if (!SourceActor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *Name);
+    }
+
+    FVector Location = SourceActor->GetActorLocation() + FVector(100, 0, 0);
+    FActorSpawnParameters SpawnParams;
+    if (!NewName.IsEmpty())
+    {
+        SpawnParams.Name = FName(*NewName);
+    }
+
+    AActor* DuplicatedActor = World->SpawnActor<AActor>(SourceActor->GetClass(), Location, SourceActor->GetActorRotation(), SpawnParams);
+    if (!DuplicatedActor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Failed to duplicate actor\"}");
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("actor_name"), DuplicatedActor->GetName());
+    Result->SetStringField(TEXT("source"), Name);
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+
+    if (GEditor)
+    {
+        GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Path);
+        return TEXT("{\"success\":true,\"result\":{\"opened\":true}}");
+    }
+
+    return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+}
+
 FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params)
 {
     FString Name = Params->GetStringField(TEXT("name"));

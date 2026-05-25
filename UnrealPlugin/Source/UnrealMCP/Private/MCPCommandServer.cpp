@@ -21,6 +21,10 @@ FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetAssetInfo(const TSharedPtr<FJsonObject>& Params);
 FString HandleDeleteAsset(const TSharedPtr<FJsonObject>& Params);
 FString HandleRenameAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetActorProperty(const TSharedPtr<FJsonObject>& Params);
+FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -262,6 +266,22 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("rename_asset"))
     {
         ResultStr = HandleRenameAsset(Params);
+    }
+    else if (Method == TEXT("set_actor_property"))
+    {
+        ResultStr = HandleSetActorProperty(Params);
+    }
+    else if (Method == TEXT("get_actor_property"))
+    {
+        ResultStr = HandleGetActorProperty(Params);
+    }
+    else if (Method == TEXT("duplicate_actor"))
+    {
+        ResultStr = HandleDuplicateActor(Params);
+    }
+    else if (Method == TEXT("open_level"))
+    {
+        ResultStr = HandleOpenLevel(Params);
     }
     else
     {

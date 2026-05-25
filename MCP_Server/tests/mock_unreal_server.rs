@@ -60,6 +60,29 @@ impl MockUnrealServer {
                                         "success": true,
                                         "result": {"destroyed": true}
                                     }),
+                                    "set_actor_property" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"set": true}
+                                    }),
+                                    "get_actor_property" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"value": 5000.0}
+                                    }),
+                                    "duplicate_actor" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "actor_name": req["params"]["newName"].as_str().unwrap_or("DuplicatedActor"),
+                                            "source": req["params"]["name"]
+                                        }
+                                    }),
+                                    "open_level" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"opened": true}
+                                    }),
                                     _ => json!({
                                         "id": req["id"],
                                         "success": false,
