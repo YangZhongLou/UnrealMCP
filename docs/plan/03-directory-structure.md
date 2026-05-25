@@ -1,5 +1,7 @@
 # 3. 目录结构
 
+> [← 返回导航](README.md) | [← 上一页: 架构设计](02-architecture.md) | [下一页: Phase 1 →](04-phase1-foundation.md)
+
 ```
 UnrealMCP/
 ├── MCP_Server/                    # Rust MCP Server
@@ -47,3 +49,5 @@ UnrealMCP/
 ├── PLAN.md                        # 本计划文档（汇总版）
 └── README.md                      # 项目说明
 ```
+
+> [← 返回导航](README.md) | [← 上一页: 架构设计](02-architecture.md) | [下一页: Phase 1 →](04-phase1-foundation.md)

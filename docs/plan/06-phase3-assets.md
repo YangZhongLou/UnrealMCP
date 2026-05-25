@@ -1,5 +1,7 @@
 # Phase 3: 资产操作 (v0.3)
 
+> [← 返回导航](README.md) | [← 上一页: Phase 2](05-phase2-core-tools.md) | [下一页: Phase 4 →](07-phase4-advanced.md)
+
 **目标**: 实现 Content Browser 资产操作
 **时间**: 5-7 天
 **依赖**: Phase 2
@@ -29,6 +31,9 @@
 - [ ] **路径边界测试**: 无效路径、空路径、深层嵌套路径
 
 ## 退出标准
+
 - 能查询和操作 Content Browser 中的资产
 - 资产路径处理正确
 - 资产操作测试通过
+
+> [← 返回导航](README.md) | [← 上一页: Phase 2](05-phase2-core-tools.md) | [下一页: Phase 4 →](07-phase4-advanced.md)

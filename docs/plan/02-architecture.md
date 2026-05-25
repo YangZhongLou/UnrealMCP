@@ -1,5 +1,7 @@
 # 2. 架构设计
 
+> [← 返回导航](README.md) | [← 上一页: 项目概述](01-overview.md) | [下一页: 目录结构 →](03-directory-structure.md)
+
 ## 2.1 整体架构
 
 ```
@@ -52,6 +54,9 @@ Unreal Editor API
 ```
 
 ## 2.4 线程模型
+
 - Unreal Plugin TCP Server 运行在独立线程 (FRunnable)
 - 所有 Editor API 调用通过 AsyncTask 或 FFunctionGraphTask 调度到 Game Thread
 - Rust MCP Server 使用 tokio 异步运行时处理并发
+
+> [← 返回导航](README.md) | [← 上一页: 项目概述](01-overview.md) | [下一页: 目录结构 →](03-directory-structure.md)

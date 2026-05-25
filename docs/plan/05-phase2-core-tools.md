@@ -1,5 +1,7 @@
 # Phase 2: 核心工具实现 (v0.2)
 
+> [← 返回导航](README.md) | [← 上一页: Phase 1](04-phase1-foundation.md) | [下一页: Phase 3 →](06-phase3-assets.md)
+
 **目标**: 实现场景操作和编辑器控制的核心工具
 **时间**: 5-7 天
 **依赖**: Phase 1
@@ -59,7 +61,10 @@ async fn test_spawn_and_destroy_actor() {
 ```
 
 ## 退出标准
+
 - 所有 P0 工具可用
 - AI 能通过自然语言创建 Actor、控制编辑器
 - 工具返回结果清晰准确
 - 核心工具单元测试覆盖率 > 80%
+
+> [← 返回导航](README.md) | [← 上一页: Phase 1](04-phase1-foundation.md) | [下一页: Phase 3 →](06-phase3-assets.md)

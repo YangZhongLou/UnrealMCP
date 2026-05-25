@@ -2,9 +2,10 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
-#include "UObject/ConstructorHelpers.h"
+#include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 static TMap<FString, AActor*> SpawnedActors;
 

@@ -1,5 +1,5 @@
-   0.056264600s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: false }/TargetInner { name: "unreal-mcp-server", doc: true, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\src\\main.rs", Edition2021) }
-   0.056296400s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-f156fac5a1cfcb6b\bin-unreal-mcp-server`
+   0.075297700s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal_mcp_server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("unreal_mcp_server", ["lib"], "D:\\Playground\\UnrealMCP\\MCP_Server\\src\\lib.rs", Edition2021) }
+   0.075836600s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal_mcp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-43f6116423bbbf44\lib-unreal_mcp_server`
 
 Caused by:
     系统找不到指定的文件。 (os error 2)
@@ -26,8 +26,120 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-   0.070207700s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: true }/TargetInner { name: "unreal-mcp-server", doc: true, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\src\\main.rs", Edition2021) }
-   0.070230200s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-a83d11b96909afbe\test-bin-unreal-mcp-server`
+   0.094987500s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal_mcp_server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("unreal_mcp_server", ["lib"], "D:\\Playground\\UnrealMCP\\MCP_Server\\src\\lib.rs", Edition2021) }
+   0.095013100s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal_mcp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-833b84e6567bc562\test-lib-unreal_mcp_server`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.095684800s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: false }/TargetInner { name: "unreal-mcp-server", doc: true, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\src\\main.rs", Edition2021) }
+   0.095698000s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-de8e0938665ba927\bin-unreal-mcp-server`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.096231100s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: true }/TargetInner { name: "unreal-mcp-server", doc: true, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\src\\main.rs", Edition2021) }
+   0.096245700s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="unreal-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-9e51012ac9d94288\test-bin-unreal-mcp-server`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.096910600s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="mock_unreal_server"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: true }/TargetInner { kind: "test", name: "mock_unreal_server", benched: false, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\tests\\mock_unreal_server.rs", Edition2021) }
+   0.096927500s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="mock_unreal_server"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-7698b0ae88cf3e23\test-integration-test-mock_unreal_server`
+
+Caused by:
+    系统找不到指定的文件。 (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.097534300s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="test_unreal_client"}: cargo::core::compiler::fingerprint: fingerprint error for unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)/Check { test: true }/TargetInner { kind: "test", name: "test_unreal_client", benched: false, ..: with_path("D:\\Playground\\UnrealMCP\\MCP_Server\\tests\\test_unreal_client.rs", Edition2021) }
+   0.097546900s  INFO prepare_target{force=false package_id=unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server) target="test_unreal_client"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\Playground\UnrealMCP\MCP_Server\target\debug\.fingerprint\unreal-mcp-server-e58d5ee9d1fc9bf4\test-integration-test-test_unreal_client`
 
 Caused by:
     系统找不到指定的文件。 (os error 2)
@@ -55,6 +167,6 @@ Stack backtrace:
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
     Checking unreal-mcp-server v0.1.0 (D:\Playground\UnrealMCP\MCP_Server)
-error: could not compile `unreal-mcp-server` (bin "unreal-mcp-server" test) due to 1 previous error
+error: could not compile `unreal-mcp-server` (lib test) due to 1 previous error
 warning: build failed, waiting for other jobs to finish...
-error: could not compile `unreal-mcp-server` (bin "unreal-mcp-server") due to 1 previous error
+error: could not compile `unreal-mcp-server` (lib) due to 1 previous error

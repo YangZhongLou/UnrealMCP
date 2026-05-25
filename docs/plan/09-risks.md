@@ -1,5 +1,7 @@
 # 5. 风险与缓解
 
+> [← 返回导航](README.md) | [← 上一页: Phase 5](08-phase5-release.md) | [下一页: 里程碑与规范 →](10-milestones.md)
+
 | 风险 | 可能性 | 影响 | 缓解措施 |
 |------|--------|------|----------|
 | Unreal Editor API 不稳定 | 中 | 高 | 使用稳定的 Editor Utility API，做好版本兼容层 |
@@ -9,3 +11,5 @@
 | 版本兼容性 | 中 | 中 | 明确支持 Unreal 5.x，定期测试，条件编译 |
 | MCP 协议变更 | 低 | 中 | 跟踪官方 SDK 更新，保持依赖版本可控 |
 | Rust MCP SDK 成熟度 | 中 | 中 | 关注 rmcp crate 更新，必要时自行实现协议层 |
+
+> [← 返回导航](README.md) | [← 上一页: Phase 5](08-phase5-release.md) | [下一页: 里程碑与规范 →](10-milestones.md)
