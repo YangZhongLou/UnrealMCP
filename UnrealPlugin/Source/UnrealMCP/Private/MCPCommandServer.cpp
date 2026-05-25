@@ -25,6 +25,8 @@ FString HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetActorProperty(const TSharedPtr<FJsonObject>& Params);
 FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params);
 FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -282,6 +284,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("open_level"))
     {
         ResultStr = HandleOpenLevel(Params);
+    }
+    else if (Method == TEXT("take_screenshot"))
+    {
+        ResultStr = HandleTakeScreenshot(Params);
+    }
+    else if (Method == TEXT("generate_cpp_class"))
+    {
+        ResultStr = HandleGenerateCppClass(Params);
     }
     else
     {

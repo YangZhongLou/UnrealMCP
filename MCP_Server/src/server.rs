@@ -505,6 +505,65 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Take a screenshot of the current viewport")]
+    async fn take_screenshot(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Optional filename, default 'screenshot'")]
+        filename: Option<String>,
+    ) -> String {
+        let mut params = json!({});
+        if let Some(f) = filename {
+            params["filename"] = json!(f);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("take_screenshot", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Screenshot saved: {}", response["result"]["path"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Generate a C++ class template")]
+    async fn generate_cpp_class(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Class name")]
+        class_name: String,
+        #[tool(param)]
+        #[schemars(description = "Parent class, e.g. 'Actor', 'Character'")]
+        parent_class: String,
+        #[tool(param)]
+        #[schemars(description = "Optional module name")]
+        module: Option<String>,
+    ) -> String {
+        let mut params = json!({
+            "className": class_name,
+            "parentClass": parent_class
+        });
+        if let Some(m) = module {
+            params["module"] = json!(m);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("generate_cpp_class", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Generated C++ class: {}", response["result"]["path"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
