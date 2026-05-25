@@ -1,0 +1,415 @@
+use rmcp::{
+    ServerHandler,
+    model::{ServerCapabilities, ServerInfo},
+    tool,
+};
+use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::unreal_client::UnrealClient;
+
+#[derive(Debug, Clone)]
+pub struct UnrealMcpServer {
+    client: Arc<Mutex<UnrealClient>>,
+}
+
+impl UnrealMcpServer {
+    pub async fn new(addr: &str) -> anyhow::Result<Self> {
+        let client = Arc::new(Mutex::new(UnrealClient::new(addr)));
+        Ok(Self { client })
+    }
+}
+
+#[tool(tool_box)]
+impl UnrealMcpServer {
+    #[tool(description = "Check connection to Unreal Engine")]
+    async fn check_unreal_connection(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_editor_info", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Connected to Unreal: {}", response["result"])
+                } else {
+                    "Unreal not responding".to_string()
+                }
+            }
+            Err(_) => "Not connected to Unreal Engine. Please ensure the Unreal Editor is running with the UnrealMCP plugin loaded.".to_string(),
+        }
+    }
+
+    #[tool(description = "Spawn an actor in the Unreal Engine scene")]
+    async fn spawn_actor(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor class name, e.g. 'StaticMeshActor', 'PointLight'")]
+        class_name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional actor name")]
+        name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional location [x, y, z]")]
+        location: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional scale [x, y, z]")]
+        scale: Option<Vec<f64>>,
+    ) -> String {
+        let mut params = json!({"className": class_name});
+        if let Some(n) = name {
+            params["name"] = json!(n);
+        }
+        if let Some(loc) = location {
+            params["location"] = json!(loc);
+        }
+        if let Some(rot) = rotation {
+            params["rotation"] = json!(rot);
+        }
+        if let Some(s) = scale {
+            params["scale"] = json!(s);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("spawn_actor", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Spawned actor: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Destroy an actor by name")]
+    async fn destroy_actor(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name to destroy")]
+        name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("destroy_actor", json!({"name": name})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Destroyed actor: {}", name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Set actor transform (location, rotation, scale)")]
+    async fn set_actor_transform(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional location [x, y, z]")]
+        location: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional scale [x, y, z]")]
+        scale: Option<Vec<f64>>,
+    ) -> String {
+        let mut params = json!({"name": name});
+        if let Some(loc) = location {
+            params["location"] = json!(loc);
+        }
+        if let Some(rot) = rotation {
+            params["rotation"] = json!(rot);
+        }
+        if let Some(s) = scale {
+            params["scale"] = json!(s);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("set_actor_transform", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Transform updated".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get list of all actors in the current scene")]
+    async fn get_actor_list(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_actor_list", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Actors: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Run a console command in Unreal Engine")]
+    async fn run_console_command(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Console command string")]
+        command: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("run_console_command", json!({"command": command})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Command executed successfully".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Save the current level")]
+    async fn save_current_level(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("save_current_level", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Level saved successfully".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Start Play In Editor (PIE)")]
+    async fn play_in_editor(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("play_in_editor", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Started Play In Editor".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Stop Play In Editor (PIE)")]
+    async fn stop_play_in_editor(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("stop_play_in_editor", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Stopped Play In Editor".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get Unreal Editor information")]
+    async fn get_editor_info(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_editor_info", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Editor Info: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Create a new Blueprint")]
+    async fn create_blueprint(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint name")]
+        name: String,
+        #[tool(param)]
+        #[schemars(description = "Parent class name, e.g. 'Actor', 'Pawn'")]
+        parent_class: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional path, default '/Game/Blueprints'")]
+        path: Option<String>,
+    ) -> String {
+        let mut params = json!({"name": name});
+        if let Some(pc) = parent_class {
+            params["parentClass"] = json!(pc);
+        }
+        if let Some(p) = path {
+            params["path"] = json!(p);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("create_blueprint", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Blueprint created: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Compile a Blueprint")]
+    async fn compile_blueprint(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("compile_blueprint", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Blueprint compiled successfully".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get Blueprint information")]
+    async fn get_blueprint_info(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_blueprint_info", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Blueprint Info: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "List assets in a path")]
+    async fn get_asset_list(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path, default '/Game'")]
+        path: Option<String>,
+    ) -> String {
+        let params = if let Some(p) = path {
+            json!({"path": p})
+        } else {
+            json!({})
+        };
+
+        let mut client = self.client.lock().await;
+        match client.send_command("get_asset_list", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Assets: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get asset information")]
+    async fn get_asset_info(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_asset_info", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Asset Info: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Delete an asset")]
+    async fn delete_asset(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("delete_asset", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Asset deleted".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Rename an asset")]
+    async fn rename_asset(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "New name")]
+        new_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("rename_asset", json!({"path": path, "newName": new_name})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Asset renamed".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+}
+
+#[tool(tool_box)]
+impl ServerHandler for UnrealMcpServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            instructions: Some("Unreal Engine MCP Server - Control Unreal Editor via AI".into()),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
+}
