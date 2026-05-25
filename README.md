@@ -36,6 +36,9 @@ UnrealMCP/
 │           │   ├── MCPCommandServer.cpp
 │           │   └── Commands/
 │           │       ├── ActorCommands.cpp
+│           │       ├── AssetCommands.cpp
+│           │       ├── BlueprintCommands.cpp
+│           │       ├── ComponentCommands.cpp
 │           │       └── EditorCommands.cpp
 │           └── Public/
 │               ├── UnrealMCP.h
@@ -45,35 +48,58 @@ UnrealMCP/
 └── PLAN.md               # 开发计划
 ```
 
-## 已实现功能
+## 已实现功能 (24 个工具)
 
-### MCP Tools (Rust Server)
-
-| Tool | 功能 |
+### Actor 操作
+| Tool | 描述 |
 |------|------|
-| `check_unreal_connection` | 检查与 Unreal 的连接状态 |
 | `spawn_actor` | 在场景中创建 Actor |
 | `destroy_actor` | 删除指定 Actor |
-| `get_actor_list` | 获取场景中所有 Actor 列表 |
-| `run_console_command` | 执行 Unreal 控制台命令 |
-| `save_current_level` | 保存当前关卡 |
-| `play_in_editor` | 启动 Play In Editor |
-| `stop_play_in_editor` | 停止 Play In Editor |
-| `get_editor_info` | 获取编辑器信息 |
+| `duplicate_actor` | 复制 Actor |
+| `get_actor_list` | 获取场景中所有 Actor |
+| `set_actor_transform` | 设置 Actor 位置/旋转/缩放 |
+| `set_actor_property` | 设置 Actor 属性值 |
+| `get_actor_property` | 获取 Actor 属性值 |
 
-### Unreal Plugin Commands (C++)
-
-| Command | 功能 |
-|---------|------|
-| `get_editor_info` | 返回引擎版本和项目名 |
-| `spawn_actor` | 在场景中创建 Actor |
-| `destroy_actor` | 销毁 Actor |
-| `set_actor_transform` | 设置 Actor Transform |
-| `get_actor_list` | 获取 Actor 列表 |
+### 编辑器操作
+| Tool | 描述 |
+|------|------|
+| `get_editor_info` | 获取编辑器/引擎信息 |
 | `run_console_command` | 执行控制台命令 |
-| `save_current_level` | 保存关卡 |
+| `save_current_level` | 保存当前关卡 |
 | `play_in_editor` | 启动 PIE |
 | `stop_play_in_editor` | 停止 PIE |
+| `take_screenshot` | 截取视口截图 |
+| `focus_viewport` | 聚焦视口到 Actor 或坐标 |
+| `get_current_level` | 获取当前关卡信息 |
+
+### 蓝图操作
+| Tool | 描述 |
+|------|------|
+| `create_blueprint` | 创建 Blueprint 资产 |
+| `compile_blueprint` | 编译 Blueprint |
+| `get_blueprint_info` | 获取 Blueprint 信息 |
+
+### 资产操作
+| Tool | 描述 |
+|------|------|
+| `get_asset_list` | 列出资产 |
+| `get_asset_info` | 获取资产信息 |
+| `delete_asset` | 删除资产 |
+| `rename_asset` | 重命名资产 |
+
+### 组件操作
+| Tool | 描述 |
+|------|------|
+| `get_actor_components` | 获取 Actor 上的所有组件 |
+| `add_component` | 添加组件到 Actor |
+| `remove_component` | 从 Actor 移除组件 |
+
+### 代码生成
+| Tool | 描述 |
+|------|------|
+| `generate_cpp_class` | 生成 C++ 类模板 |
+| `check_unreal_connection` | 检查连接状态 |
 
 ## 安装使用
 
