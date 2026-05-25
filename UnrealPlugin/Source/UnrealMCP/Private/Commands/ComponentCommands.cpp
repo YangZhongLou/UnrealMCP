@@ -123,3 +123,51 @@ FString HandleAddComponent(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
     return Out;
 }
+
+FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    FString ComponentName = Params->GetStringField(TEXT("componentName"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            TargetActor = *It;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    }
+
+    TSet<UActorComponent*> ComponentSet = TargetActor->GetComponents();
+    UActorComponent* TargetComp = nullptr;
+    for (UActorComponent* Comp : ComponentSet)
+    {
+        if (Comp->GetName() == ComponentName)
+        {
+            TargetComp = Comp;
+            break;
+        }
+    }
+
+    if (!TargetComp)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Component not found: %s\"}"), *ComponentName);
+    }
+
+    TargetComp->DestroyComponent();
+    TargetActor->RerunConstructionScripts();
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"removed\":true,\"component\":\"%s\"}}"), *ComponentName);
+}

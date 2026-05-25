@@ -201,3 +201,70 @@ FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
+
+FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    FVector TargetLocation = FVector::ZeroVector;
+
+    if (Params->HasField(TEXT("actorName")))
+    {
+        FString ActorName = Params->GetStringField(TEXT("actorName"));
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName)
+            {
+                Actor = *It;
+                break;
+            }
+        }
+
+        if (!Actor)
+        {
+            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+        }
+
+        TargetLocation = Actor->GetActorLocation();
+    }
+    else if (Params->HasField(TEXT("location")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
+        if (Arr.Num() >= 3)
+        {
+            TargetLocation.X = Arr[0]->AsNumber();
+            TargetLocation.Y = Arr[1]->AsNumber();
+            TargetLocation.Z = Arr[2]->AsNumber();
+        }
+    }
+    else
+    {
+        return TEXT("{\"success\":false,\"error\":\"Provide actorName or location\"}");
+    }
+
+    if (GCurrentLevelEditingViewportClient)
+    {
+        GCurrentLevelEditingViewportClient->SetViewLocation(TargetLocation);
+        GCurrentLevelEditingViewportClient->Invalidate();
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("focused_at"), FString::Printf(TEXT("[%.0f, %.0f, %.0f]"),
+        TargetLocation.X, TargetLocation.Y, TargetLocation.Z));
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}

@@ -633,6 +633,63 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Remove a component from an actor by component name")]
+    async fn remove_component(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Component name to remove")]
+        component_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("remove_component", json!({
+            "actorName": actor_name,
+            "componentName": component_name
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Component removed".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Focus the viewport camera on an actor or location")]
+    async fn focus_viewport(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Optional actor name to focus on")]
+        actor_name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional location [x, y, z] to focus on")]
+        location: Option<Vec<f64>>,
+    ) -> String {
+        let mut params = json!({});
+        if let Some(n) = actor_name {
+            params["actorName"] = json!(n);
+        }
+        if let Some(loc) = location {
+            params["location"] = json!(loc);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("focus_viewport", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Viewport focused".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
