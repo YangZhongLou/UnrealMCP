@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Editor.h"
+#include "EngineUtils.h"
 #include "FileHelpers.h"
 #include "LevelEditorViewport.h"
 #include "Dom/JsonObject.h"
@@ -163,6 +164,40 @@ FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params)
     FString ResultStr;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
     FJsonSerializer::Serialize(ResultObj.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    FString LevelName = World->GetMapName();
+    FString LevelPath = World->GetOutermost()->GetName();
+
+    int32 ActorCount = 0;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        ActorCount++;
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("name"), LevelName);
+    Result->SetStringField(TEXT("path"), LevelPath);
+    Result->SetNumberField(TEXT("actor_count"), ActorCount);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }

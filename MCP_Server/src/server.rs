@@ -564,6 +564,75 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Get information about the currently open level")]
+    async fn get_current_level(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_current_level", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Level: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get all components attached to an actor")]
+    async fn get_actor_components(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_actor_components", json!({"actorName": actor_name})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Components: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Add a component to an actor")]
+    async fn add_component(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name to add the component to")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Component class name, e.g. 'StaticMeshComponent', 'PointLightComponent'")]
+        component_class: String,
+        #[tool(param)]
+        #[schemars(description = "Optional name for the new component")]
+        component_name: Option<String>,
+    ) -> String {
+        let mut params = json!({
+            "actorName": actor_name,
+            "componentClass": component_class
+        });
+        if let Some(n) = component_name {
+            params["componentName"] = json!(n);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("add_component", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Component added: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
