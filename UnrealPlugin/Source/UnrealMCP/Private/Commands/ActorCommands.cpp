@@ -4,6 +4,8 @@
 #include "Engine/Blueprint.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -601,6 +603,95 @@ FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params)
     Result->SetStringField(TEXT("name"), SpawnedActor->GetName());
     Result->SetStringField(TEXT("class"), SpawnedActor->GetClass()->GetName());
     Result->SetStringField(TEXT("blueprint"), BlueprintPath);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetPath = Params->GetStringField(TEXT("assetPath"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+
+    UObject* EffectAsset = LoadObject<UObject>(nullptr, *AssetPath);
+    if (!EffectAsset)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Effect asset not found: %s\"}"), *AssetPath);
+    }
+
+    FVector Location(0, 0, 0);
+    if (Params->HasField(TEXT("location")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
+        if (Arr.Num() >= 3)
+        {
+            Location.X = Arr[0]->AsNumber();
+            Location.Y = Arr[1]->AsNumber();
+            Location.Z = Arr[2]->AsNumber();
+        }
+    }
+
+    FRotator Rotation(0, 0, 0);
+    if (Params->HasField(TEXT("rotation")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
+        if (Arr.Num() >= 3)
+        {
+            Rotation.Pitch = Arr[0]->AsNumber();
+            Rotation.Yaw = Arr[1]->AsNumber();
+            Rotation.Roll = Arr[2]->AsNumber();
+        }
+    }
+
+    bool bAutoDestroy = !Params->HasField(TEXT("autoDestroy")) || Params->GetBoolField(TEXT("autoDestroy"));
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.bNoFail = true;
+
+    AActor* EffectActor = World->SpawnActor<AActor>(AActor::StaticClass(), Location, Rotation, SpawnParams);
+    if (!EffectActor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Failed to spawn effect container\"}");
+    }
+
+    UParticleSystemComponent* PSC = nullptr;
+    if (UParticleSystem* PSTemplate = Cast<UParticleSystem>(EffectAsset))
+    {
+        PSC = UGameplayStatics::SpawnEmitterAtLocation(
+            World, PSTemplate, Location, Rotation, FVector(1.0f), bAutoDestroy);
+    }
+    else
+    {
+        // Try Niagara
+        PSC = NewObject<UParticleSystemComponent>(EffectActor);
+        if (PSC)
+        {
+            PSC->RegisterComponent();
+            PSC->SetWorldLocation(Location);
+            PSC->SetWorldRotation(Rotation);
+        }
+    }
+
+    if (!PSC)
+    {
+        EffectActor->Destroy();
+        return TEXT("{\"success\":false,\"error\":\"Could not create particle system\"}");
+    }
+
+    PSC->AttachToComponent(EffectActor->GetRootComponent(),
+        FAttachmentTransformRules::KeepWorldTransform);
+
+    // Ensure the container doesn't interfere
+    EffectActor->SetActorHiddenInGame(true);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("name"), PSC->GetName());
+    Result->SetStringField(TEXT("asset"), AssetPath);
 
     FString ResultStr;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);

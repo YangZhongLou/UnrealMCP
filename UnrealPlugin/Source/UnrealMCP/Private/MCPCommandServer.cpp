@@ -42,6 +42,8 @@ FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params);
 FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
 FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params);
+FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -367,6 +369,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("get_viewport_camera"))
     {
         ResultStr = HandleGetViewportCamera(Params);
+    }
+    else if (Method == TEXT("set_light_parameters"))
+    {
+        ResultStr = HandleSetLightParameters(Params);
+    }
+    else if (Method == TEXT("spawn_effect"))
+    {
+        ResultStr = HandleSpawnEffect(Params);
     }
     else
     {

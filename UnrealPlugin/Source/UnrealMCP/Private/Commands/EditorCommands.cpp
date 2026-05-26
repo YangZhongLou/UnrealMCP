@@ -5,6 +5,7 @@
 #include "FileHelpers.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
+#include "Components/LightComponent.h"
 #include "LevelEditorViewport.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -422,4 +423,50 @@ FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+
+    AActor* Actor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            Actor = *It;
+            break;
+        }
+    }
+
+    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+
+    ULightComponent* LightComp = Actor->FindComponentByClass<ULightComponent>();
+    if (!LightComp) return TEXT("{\"success\":false,\"error\":\"No light component found on actor\"}");
+
+    if (Params->HasField(TEXT("intensity")))
+    {
+        LightComp->SetIntensity(Params->GetNumberField(TEXT("intensity")));
+    }
+    if (Params->HasField(TEXT("color")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("color"));
+        if (Arr.Num() >= 3)
+        {
+            FColor Color(
+                FMath::RoundToInt(Arr[0]->AsNumber() * 255),
+                FMath::RoundToInt(Arr[1]->AsNumber() * 255),
+                FMath::RoundToInt(Arr[2]->AsNumber() * 255));
+            LightComp->SetLightColor(Color, true);
+        }
+    }
+    if (Params->HasField(TEXT("castShadows")))
+    {
+        LightComp->SetCastShadows(Params->GetBoolField(TEXT("castShadows")));
+    }
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\"}}"), *ActorName);
 }

@@ -1004,6 +1004,74 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Set parameters on a light actor (intensity, color, shadows)")]
+    async fn set_light_parameters(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Light actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional light intensity")]
+        intensity: Option<f64>,
+        #[tool(param)]
+        #[schemars(description = "Optional light color [r, g, b] (0.0-1.0)")]
+        color: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional cast shadows flag")]
+        cast_shadows: Option<bool>,
+    ) -> String {
+        let mut params = json!({"actorName": actor_name});
+        if let Some(i) = intensity { params["intensity"] = json!(i); }
+        if let Some(c) = color { params["color"] = json!(c); }
+        if let Some(s) = cast_shadows { params["castShadows"] = json!(s); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("set_light_parameters", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Light parameters set on {}", actor_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Spawn a Niagara/Cascade particle effect at a location")]
+    async fn spawn_effect(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Particle system asset path, e.g. '/Game/FX/PS_Fire.PS_Fire'")]
+        asset_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional spawn location [x, y, z], default origin")]
+        location: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "If true, auto-destroy when finished; default true")]
+        auto_destroy: Option<bool>,
+    ) -> String {
+        let mut params = json!({"assetPath": asset_path});
+        if let Some(loc) = location { params["location"] = json!(loc); }
+        if let Some(rot) = rotation { params["rotation"] = json!(rot); }
+        if let Some(a) = auto_destroy { params["autoDestroy"] = json!(a); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("spawn_effect", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Effect spawned: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
