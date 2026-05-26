@@ -893,6 +893,74 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Find actors by class name (supports partial match)")]
+    async fn find_actors_by_class(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Class name to search for, e.g. 'PointLight', 'StaticMeshActor'")]
+        class_name: String,
+        #[tool(param)]
+        #[schemars(description = "If true, match exact class name; default false (substring match)")]
+        exact_match: Option<bool>,
+    ) -> String {
+        let mut params = json!({"className": class_name});
+        if let Some(e) = exact_match {
+            params["exactMatch"] = json!(e);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("find_actors_by_class", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Found: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Spawn an actor from a Blueprint asset")]
+    async fn spawn_blueprint_actor(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path, e.g. '/Game/Blueprints/BP_MyActor.BP_MyActor'")]
+        blueprint_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional actor name")]
+        name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional location [x, y, z]")]
+        location: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+    ) -> String {
+        let mut params = json!({"blueprintPath": blueprint_path});
+        if let Some(n) = name {
+            params["name"] = json!(n);
+        }
+        if let Some(loc) = location {
+            params["location"] = json!(loc);
+        }
+        if let Some(rot) = rotation {
+            params["rotation"] = json!(rot);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("spawn_blueprint_actor", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Spawned: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]

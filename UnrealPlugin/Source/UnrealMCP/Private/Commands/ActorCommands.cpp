@@ -1,6 +1,7 @@
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "Engine/Blueprint.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Editor.h"
@@ -486,4 +487,124 @@ FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params)
     TargetActor->MarkPackageDirty();
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"mesh\":\"%s\"}}"), *ActorName, *MeshPath);
+}
+
+FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ClassName = Params->GetStringField(TEXT("className"));
+    bool bExactMatch = Params->HasField(TEXT("exactMatch"))
+        ? Params->GetBoolField(TEXT("exactMatch"))
+        : false;
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Actors;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        FString ActorClassName = It->GetClass()->GetName();
+        bool bMatches = bExactMatch
+            ? ActorClassName.Equals(ClassName, ESearchCase::IgnoreCase)
+            : ActorClassName.Contains(ClassName, ESearchCase::IgnoreCase);
+
+        if (bMatches)
+        {
+            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+            Obj->SetStringField(TEXT("name"), It->GetName());
+            Obj->SetStringField(TEXT("class"), ActorClassName);
+            FVector Loc = It->GetActorLocation();
+            TArray<TSharedPtr<FJsonValue>> LocArr;
+            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
+            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
+            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
+            Obj->SetArrayField(TEXT("location"), LocArr);
+            Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetArrayField(TEXT("actors"), Actors);
+    Result->SetNumberField(TEXT("count"), Actors.Num());
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath = Params->GetStringField(TEXT("blueprintPath"));
+    FString ActorName = Params->HasField(TEXT("name"))
+        ? Params->GetStringField(TEXT("name"))
+        : TEXT("");
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+    if (!Blueprint)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *BlueprintPath);
+    }
+
+    UClass* GeneratedClass = Blueprint->GeneratedClass;
+    if (!GeneratedClass)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Blueprint has no generated class\"}");
+    }
+
+    FVector Location(0, 0, 0);
+    if (Params->HasField(TEXT("location")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
+        if (Arr.Num() >= 3)
+        {
+            Location.X = Arr[0]->AsNumber();
+            Location.Y = Arr[1]->AsNumber();
+            Location.Z = Arr[2]->AsNumber();
+        }
+    }
+
+    FRotator Rotation(0, 0, 0);
+    if (Params->HasField(TEXT("rotation")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
+        if (Arr.Num() >= 3)
+        {
+            Rotation.Pitch = Arr[0]->AsNumber();
+            Rotation.Yaw = Arr[1]->AsNumber();
+            Rotation.Roll = Arr[2]->AsNumber();
+        }
+    }
+
+    FActorSpawnParameters SpawnParams;
+    if (!ActorName.IsEmpty())
+    {
+        SpawnParams.Name = FName(*ActorName);
+    }
+
+    AActor* SpawnedActor = World->SpawnActor<AActor>(GeneratedClass, Location, Rotation, SpawnParams);
+    if (!SpawnedActor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Failed to spawn actor\"}");
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("name"), SpawnedActor->GetName());
+    Result->SetStringField(TEXT("class"), SpawnedActor->GetClass()->GetName());
+    Result->SetStringField(TEXT("blueprint"), BlueprintPath);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }

@@ -38,6 +38,8 @@ FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetMaterial(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params);
+FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params);
+FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -347,6 +349,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("set_material_parameter"))
     {
         ResultStr = HandleSetMaterialParameter(Params);
+    }
+    else if (Method == TEXT("find_actors_by_class"))
+    {
+        ResultStr = HandleFindActorsByClass(Params);
+    }
+    else if (Method == TEXT("spawn_blueprint_actor"))
+    {
+        ResultStr = HandleSpawnBlueprintActor(Params);
     }
     else
     {
