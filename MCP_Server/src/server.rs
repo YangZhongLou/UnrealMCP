@@ -767,6 +767,132 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Apply a material to a component on an actor")]
+    async fn set_material(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Material asset path, e.g. '/Game/Materials/MyMat.MyMat'")]
+        material_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional component name, defaults to first mesh component")]
+        component_name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional material slot index, default 0")]
+        slot_index: Option<i32>,
+    ) -> String {
+        let mut params = json!({
+            "actorName": actor_name,
+            "materialPath": material_path
+        });
+        if let Some(c) = component_name {
+            params["componentName"] = json!(c);
+        }
+        if let Some(s) = slot_index {
+            params["slotIndex"] = json!(s);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("set_material", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Material applied to {}", actor_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Create a material instance from a parent material")]
+    async fn create_material_instance(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path for the new material instance, e.g. '/Game/Materials/MI_MyMat'")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Parent material path, e.g. '/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial'")]
+        parent_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional: 'constant' (persistent asset, default) or 'dynamic' (runtime only)")]
+        instance_type: Option<String>,
+    ) -> String {
+        let mut params = json!({
+            "path": path,
+            "parentPath": parent_path
+        });
+        if let Some(t) = instance_type {
+            params["instanceType"] = json!(t);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("create_material_instance", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Material instance created: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Set a parameter on a material instance")]
+    async fn set_material_parameter(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name that has the material instance")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Parameter name")]
+        parameter_name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional scalar (float) value")]
+        scalar_value: Option<f64>,
+        #[tool(param)]
+        #[schemars(description = "Optional vector [r, g, b] value (0.0-1.0)")]
+        vector_value: Option<Vec<f64>>,
+        #[tool(param)]
+        #[schemars(description = "Optional component name")]
+        component_name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional material slot index, default 0")]
+        slot_index: Option<i32>,
+    ) -> String {
+        let mut params = json!({
+            "actorName": actor_name,
+            "parameterName": parameter_name
+        });
+        if let Some(s) = scalar_value {
+            params["scalarValue"] = json!(s);
+        }
+        if let Some(v) = vector_value {
+            params["vectorValue"] = json!(v);
+        }
+        if let Some(c) = component_name {
+            params["componentName"] = json!(c);
+        }
+        if let Some(s) = slot_index {
+            params["slotIndex"] = json!(s);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("set_material_parameter", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    "Material parameter set".to_string()
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
