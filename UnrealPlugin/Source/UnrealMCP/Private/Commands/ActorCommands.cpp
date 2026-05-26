@@ -425,3 +425,65 @@ FString HandleGetActorList(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
     return Out;
 }
+
+FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    FString MeshPath = Params->GetStringField(TEXT("meshPath"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            TargetActor = *It;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    }
+
+    UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, *MeshPath);
+    if (!StaticMesh)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Mesh not found: %s\"}"), *MeshPath);
+    }
+
+    UStaticMeshComponent* MeshComp = nullptr;
+    if (Params->HasField(TEXT("componentName")))
+    {
+        FString CompName = Params->GetStringField(TEXT("componentName"));
+        TSet<UActorComponent*> Components = TargetActor->GetComponents();
+        for (UActorComponent* Comp : Components)
+        {
+            if (Comp->GetName() == CompName)
+            {
+                MeshComp = Cast<UStaticMeshComponent>(Comp);
+                break;
+            }
+        }
+    }
+    else
+    {
+        MeshComp = TargetActor->FindComponentByClass<UStaticMeshComponent>();
+    }
+
+    if (!MeshComp)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No StaticMeshComponent found on actor\"}");
+    }
+
+    MeshComp->SetStaticMesh(StaticMesh);
+    TargetActor->MarkPackageDirty();
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"mesh\":\"%s\"}}"), *ActorName, *MeshPath);
+}

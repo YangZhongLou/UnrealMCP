@@ -32,6 +32,9 @@ FString HandleGetActorComponents(const TSharedPtr<FJsonObject>& Params);
 FString HandleAddComponent(const TSharedPtr<FJsonObject>& Params);
 FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params);
 FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetSelectedActors(const TSharedPtr<FJsonObject>& Params);
+FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -317,6 +320,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("focus_viewport"))
     {
         ResultStr = HandleFocusViewport(Params);
+    }
+    else if (Method == TEXT("get_selected_actors"))
+    {
+        ResultStr = HandleGetSelectedActors(Params);
+    }
+    else if (Method == TEXT("select_actor"))
+    {
+        ResultStr = HandleSelectActor(Params);
+    }
+    else if (Method == TEXT("set_static_mesh"))
+    {
+        ResultStr = HandleSetStaticMesh(Params);
     }
     else
     {

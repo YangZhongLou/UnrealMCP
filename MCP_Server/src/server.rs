@@ -690,6 +690,83 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Get list of currently selected actors in the editor")]
+    async fn get_selected_actors(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_selected_actors", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Selected: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Select an actor by name in the editor")]
+    async fn select_actor(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name to select")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "If true, add to existing selection; default false (replace)")]
+        add_to_selection: Option<bool>,
+    ) -> String {
+        let mut params = json!({"actorName": actor_name});
+        if let Some(a) = add_to_selection {
+            params["addToSelection"] = json!(a);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("select_actor", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Selected: {}", actor_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Set the static mesh on a StaticMeshComponent")]
+    async fn set_static_mesh(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name that has the StaticMeshComponent")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Static mesh asset path, e.g. '/Engine/BasicShapes/Cube.Cube'")]
+        mesh_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional component name, defaults to first StaticMeshComponent found")]
+        component_name: Option<String>,
+    ) -> String {
+        let mut params = json!({
+            "actorName": actor_name,
+            "meshPath": mesh_path
+        });
+        if let Some(c) = component_name {
+            params["componentName"] = json!(c);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("set_static_mesh", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Static mesh set on {}", actor_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]

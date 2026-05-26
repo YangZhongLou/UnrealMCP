@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Editor.h"
+#include "Selection.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
 #include "LevelEditorViewport.h"
@@ -267,4 +268,80 @@ FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleGetSelectedActors(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Actors;
+    USelection* Selection = GEditor->GetSelectedActors();
+    if (Selection)
+    {
+        for (int32 i = 0; i < Selection->Num(); i++)
+        {
+            if (AActor* Actor = Cast<AActor>(Selection->GetSelectedObject(i)))
+            {
+                TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+                Obj->SetStringField(TEXT("name"), Actor->GetName());
+                Obj->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+                Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
+            }
+        }
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetArrayField(TEXT("actors"), Actors);
+    Result->SetNumberField(TEXT("count"), Actors.Num());
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    bool bAddToSelection = Params->HasField(TEXT("addToSelection"))
+        ? Params->GetBoolField(TEXT("addToSelection"))
+        : false;
+
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    }
+
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            TargetActor = *It;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    }
+
+    if (!bAddToSelection)
+    {
+        GEditor->SelectNone(false, true);
+    }
+    GEditor->SelectActor(TargetActor, true, true, true);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"selected\":\"%s\"}}"), *ActorName);
 }
