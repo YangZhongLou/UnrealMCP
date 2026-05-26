@@ -699,3 +699,28 @@ FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
+
+FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+    FString Tag = Params->GetStringField(TEXT("tag"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+
+    AActor* Actor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            Actor = *It;
+            break;
+        }
+    }
+
+    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+
+    Actor->Tags.AddUnique(FName(*Tag));
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"tag\":\"%s\"}}"), *ActorName, *Tag);
+}

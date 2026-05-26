@@ -1072,6 +1072,78 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Add a tag to an actor")]
+    async fn add_actor_tag(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Actor name")]
+        actor_name: String,
+        #[tool(param)]
+        #[schemars(description = "Tag to add")]
+        tag: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("add_actor_tag", json!({
+            "actorName": actor_name,
+            "tag": tag
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Tag '{}' added to {}", tag, actor_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Set the editor viewport render mode")]
+    async fn set_view_mode(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "View mode: Lit, Unlit, Wireframe, ShaderComplexity, etc.")]
+        mode: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("set_view_mode", json!({"mode": mode})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("View mode set to: {}", mode)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Toggle debug visualization (collision, navigation, bounds, etc.)")]
+    async fn show_debug(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Debug flag: collision, navigation, bones, bounds, skeletalmeshes")]
+        flag: String,
+        #[tool(param)]
+        #[schemars(description = "Optional: true to show, false to hide; toggles if omitted")]
+        enable: Option<bool>,
+    ) -> String {
+        let mut params = json!({"flag": flag});
+        if let Some(e) = enable { params["enable"] = json!(e); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("show_debug", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Debug flag '{}' set", flag)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]

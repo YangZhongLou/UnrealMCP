@@ -44,6 +44,9 @@ FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params);
 FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params);
+FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -377,6 +380,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("spawn_effect"))
     {
         ResultStr = HandleSpawnEffect(Params);
+    }
+    else if (Method == TEXT("add_actor_tag"))
+    {
+        ResultStr = HandleAddActorTag(Params);
+    }
+    else if (Method == TEXT("set_view_mode"))
+    {
+        ResultStr = HandleSetViewMode(Params);
+    }
+    else if (Method == TEXT("show_debug"))
+    {
+        ResultStr = HandleShowDebug(Params);
     }
     else
     {

@@ -470,3 +470,38 @@ FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\"}}"), *ActorName);
 }
+
+FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Mode = Params->GetStringField(TEXT("mode"));
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    FString Cmd = FString::Printf(TEXT("viewmode %s"), *Mode);
+    if (World)
+    {
+        GEngine->Exec(World, *Cmd);
+    }
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"view_mode\":\"%s\"}}"), *Mode);
+}
+
+FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Flag = Params->GetStringField(TEXT("flag"));
+    FString EnableStr;
+
+    if (Params->HasField(TEXT("enable")))
+    {
+        bool bEnable = Params->GetBoolField(TEXT("enable"));
+        EnableStr = bEnable ? TEXT(" 1") : TEXT(" 0");
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    FString Cmd = FString::Printf(TEXT("show %s%s"), *Flag, *EnableStr);
+    if (World)
+    {
+        GEngine->Exec(World, *Cmd);
+    }
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"debug_flag\":\"%s\"}}"), *Flag);
+}
