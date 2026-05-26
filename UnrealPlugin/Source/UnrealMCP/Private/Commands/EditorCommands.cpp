@@ -3,6 +3,8 @@
 #include "Selection.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
+#include "Framework/Application/SlateApplication.h"
+#include "InputCoreTypes.h"
 #include "LevelEditorViewport.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -344,4 +346,80 @@ FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params)
     GEditor->SelectActor(TargetActor, true, true, true);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"selected\":\"%s\"}}"), *ActorName);
+}
+
+FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params)
+{
+    FString KeyName = Params->GetStringField(TEXT("key"));
+    FString Action = Params->HasField(TEXT("action"))
+        ? Params->GetStringField(TEXT("action"))
+        : TEXT("tap");
+
+    FKey Key(*KeyName);
+    if (!Key.IsValid())
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Invalid key: %s\"}"), *KeyName);
+    }
+
+    FModifierKeysState ModifierKeys;
+    int32 UserIndex = 0;
+    uint32 KeyCode = 0;
+    uint32 CharCode = 0;
+
+    bool bShouldPress = Action.Equals(TEXT("press"), ESearchCase::IgnoreCase) ||
+                        Action.Equals(TEXT("tap"), ESearchCase::IgnoreCase);
+    bool bShouldRelease = Action.Equals(TEXT("release"), ESearchCase::IgnoreCase) ||
+                          Action.Equals(TEXT("tap"), ESearchCase::IgnoreCase);
+
+    if (bShouldPress)
+    {
+        FKeyEvent PressEvent(Key, ModifierKeys, UserIndex, false, KeyCode, CharCode);
+        FSlateApplication::Get().ProcessKeyDownEvent(PressEvent);
+    }
+    if (bShouldRelease)
+    {
+        FKeyEvent ReleaseEvent(Key, ModifierKeys, UserIndex, true, KeyCode, CharCode);
+        FSlateApplication::Get().ProcessKeyUpEvent(ReleaseEvent);
+    }
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"key\":\"%s\",\"action\":\"%s\"}}"), *KeyName, *Action);
+}
+
+FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params)
+{
+    FVector Location = FVector::ZeroVector;
+    FRotator Rotation = FRotator::ZeroRotator;
+    bool bFound = false;
+
+    if (GCurrentLevelEditingViewportClient)
+    {
+        Location = GCurrentLevelEditingViewportClient->GetViewLocation();
+        Rotation = GCurrentLevelEditingViewportClient->GetViewRotation();
+        bFound = true;
+    }
+
+    if (!bFound)
+    {
+        return TEXT("{\"success\":false,\"error\":\"No viewport camera available\"}");
+    }
+
+    TArray<TSharedPtr<FJsonValue>> LocArr;
+    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.X)));
+    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Y)));
+    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Z)));
+
+    TArray<TSharedPtr<FJsonValue>> RotArr;
+    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Pitch)));
+    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Yaw)));
+    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Roll)));
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetArrayField(TEXT("location"), LocArr);
+    Result->SetArrayField(TEXT("rotation"), RotArr);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }

@@ -961,6 +961,49 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Simulate a keyboard key press or release")]
+    async fn simulate_key(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Key name, e.g. 'W', 'SpaceBar', 'Enter', 'LeftMouseButton'")]
+        key: String,
+        #[tool(param)]
+        #[schemars(description = "Key action: 'press', 'release', or 'tap' (default)")]
+        action: Option<String>,
+    ) -> String {
+        let mut params = json!({"key": key});
+        if let Some(a) = action {
+            params["action"] = json!(a);
+        }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("simulate_key", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Key simulated: {}", key)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get the current viewport camera position and rotation")]
+    async fn get_viewport_camera(&self) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("get_viewport_camera", json!({})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Camera: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]

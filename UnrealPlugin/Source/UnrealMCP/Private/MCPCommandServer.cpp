@@ -40,6 +40,8 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params);
 FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params);
 FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -357,6 +359,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("spawn_blueprint_actor"))
     {
         ResultStr = HandleSpawnBlueprintActor(Params);
+    }
+    else if (Method == TEXT("simulate_key"))
+    {
+        ResultStr = HandleSimulateKey(Params);
+    }
+    else if (Method == TEXT("get_viewport_camera"))
+    {
+        ResultStr = HandleGetViewportCamera(Params);
     }
     else
     {
