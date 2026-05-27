@@ -123,6 +123,7 @@ D:\Playground\UEMCPTest\
 ```text
 feat: Complete Phase <N> - <Description>
 ```
+
 Use `feat:`, `fix:`, `docs:`, `refactor:`, `chore:` prefixes.
 
 ## Project State
