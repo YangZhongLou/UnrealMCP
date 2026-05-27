@@ -4,7 +4,7 @@
 > 历史进度详见 [10-milestones.md](10-milestones.md)。
 
 | 字段 | 值 |
-|------|-----|
+| --- | --- |
 | **当前 Phase** | Phase 22 — 添加 create_level 工具 ✅ |
 | **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |

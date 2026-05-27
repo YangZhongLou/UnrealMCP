@@ -5,7 +5,7 @@
 6 阶段流水线，不得跳过。每个阶段分为 3 个子步骤：**Plan → Review → Work**。
 任一子步骤发现计划不合理，打回该阶段的 Plan 重新计划。
 
-```
+```text
 1.Brainstorm → 2.Architect → 3.Implement → 4.Test → 5.Document → 6.Commit
   ↑               │               │             │            │
   └───────────────┴───────────────┴─────────────┴────────────┘
@@ -26,7 +26,7 @@
 ### 阶段速查
 
 | 阶段 | 技能 | Plan | Review | Work | Gate |
-|------|------|------|--------|------|------|
+| --- | --- | --- | --- | --- | --- |
 | 1. Brainstorm | `/pm` | 需求脑爆，自由发散 | PM 审查可行性+安排工作 | 输出任务列表 | <1天/任务，binary done |
 | 2. Architect | `/architect` | 确定影响范围 | 审查 UE API 可行性 | 输出技术方案 | UE API 可用，无冲突 |
 | 3. Implement | `/programmer` | 搭建函数骨架 | 审查签名+参数 | 填充实现+编译 | 3 文件全改，cargo build 过 |
@@ -62,7 +62,7 @@ AI Client ──stdio──▶ Rust MCP Server ──TCP:13377──▶ Unreal P
 ### 两层测试体系 (MUST)
 
 | 层 | 位置 | 内容 | Gate |
-|----|------|------|------|
+| --- | --- | --- | --- |
 | **Mock 测试** | `MCP_Server/tests/test_unreal_client.rs` | 用 `mock_unreal_server.rs` 模拟 UE 端，验证 Rust→TCP→JSON 链路 | 10/10 必过 |
 | **真实 UE 测试** | `MCP_Server/tests/test_real_ue.rs` | 编译 UnrealMCP 插件，启动真实 UE Editor，Rust 直连 13377 端口，验证完整链路 | `#[ignore]` 标记，**每个新 tool 必须手跑通过** |
 

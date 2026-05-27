@@ -4,7 +4,7 @@ Unreal Engine MCP (Model Context Protocol) 集成方案，让 AI 助手能够通
 
 ## 架构
 
-```
+```text
 AI Client (Claude/Cursor/Trae)
     │ stdio (MCP Protocol)
     ▼
@@ -53,7 +53,7 @@ UnrealMCP/
 
 ### Actor 操作 (9)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `spawn_actor` | 在场景中创建 Actor |
 | `destroy_actor` | 删除指定 Actor |
 | `duplicate_actor` | 复制 Actor |
@@ -66,7 +66,7 @@ UnrealMCP/
 
 ### 编辑器操作 (11)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `get_editor_info` | 获取编辑器/引擎信息 |
 | `run_console_command` | 执行控制台命令 |
 | `save_current_level` | 保存当前关卡 |
@@ -85,7 +85,7 @@ UnrealMCP/
 
 ### 蓝图操作 (11)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `create_blueprint` | 创建 Blueprint 资产 |
 | `compile_blueprint` | 编译 Blueprint |
 | `get_blueprint_info` | 获取 Blueprint 信息与变量 |
@@ -100,7 +100,7 @@ UnrealMCP/
 
 ### 资产操作 (6)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `get_asset_list` | 列出资产 |
 | `get_asset_info` | 获取资产信息 |
 | `delete_asset` | 删除资产 |
@@ -110,47 +110,47 @@ UnrealMCP/
 
 ### 组件操作 (3)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `get_actor_components` | 获取 Actor 上的所有组件 |
 | `add_component` | 添加组件到 Actor |
 | `remove_component` | 从 Actor 移除组件 |
 
 ### 材质操作 (3)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `set_material` | 应用材质到网格组件 |
 | `create_material_instance` | 创建材质实例 (MIC/MID) |
 | `set_material_parameter` | 设置材质参数 (标量/向量) |
 
 ### 网格 / 光照 / 特效 (3)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `set_static_mesh` | 设置 StaticMeshComponent 的网格 |
 | `set_light_parameters` | 设置光源参数 (强度/颜色/阴影) |
 | `spawn_effect` | 生成 Niagara/Cascade 粒子特效 |
 
 ### 输入 / 相机 (2)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `simulate_key` | 模拟键盘按键 (按下/释放/点击) |
 | `get_viewport_camera` | 获取编辑器视口相机位置与旋转 |
 
 ### 视口 / 调试 (3)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `set_view_mode` | 设置视口渲染模式 (Lit/Unlit/Wireframe 等) |
 | `show_debug` | 切换调试可视化 (碰撞/导航/边界) |
 | `add_actor_tag` | 给 Actor 添加标签 |
 
 ### 关卡 / 代码 (2)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `open_level` | 打开关卡 |
 | `generate_cpp_class` | 生成 C++ 类模板 |
 
 ### 连接 (1)
 | Tool | 描述 |
-|------|------|
+| --- | --- |
 | `check_unreal_connection` | 检查连接状态 |
 
 ## API 文档
