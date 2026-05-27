@@ -584,12 +584,6 @@ FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("name"))
         : TEXT("");
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
-
     UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
     if (!Blueprint)
     {
@@ -606,33 +600,33 @@ FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params)
     if (Params->HasField(TEXT("location")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
-        if (Arr.Num() >= 3)
-        {
-            Location.X = Arr[0]->AsNumber();
-            Location.Y = Arr[1]->AsNumber();
-            Location.Z = Arr[2]->AsNumber();
-        }
+        if (Arr.Num() >= 3) { Location = FVector(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber()); }
     }
 
     FRotator Rotation(0, 0, 0);
     if (Params->HasField(TEXT("rotation")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
-        if (Arr.Num() >= 3)
-        {
-            Rotation.Pitch = Arr[0]->AsNumber();
-            Rotation.Yaw = Arr[1]->AsNumber();
-            Rotation.Roll = Arr[2]->AsNumber();
-        }
+        if (Arr.Num() >= 3) { Rotation = FRotator(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber()); }
     }
 
     FActorSpawnParameters SpawnParams;
-    if (!ActorName.IsEmpty())
-    {
-        SpawnParams.Name = FName(*ActorName);
-    }
+    if (!ActorName.IsEmpty()) { SpawnParams.Name = FName(*ActorName); }
 
-    AActor* SpawnedActor = World->SpawnActor<AActor>(GeneratedClass, Location, Rotation, SpawnParams);
+    AActor* SpawnedActor = nullptr;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (World)
+            SpawnedActor = World->SpawnActor<AActor>(GeneratedClass, Location, Rotation, SpawnParams);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
     if (!SpawnedActor)
     {
         return TEXT("{\"success\":false,\"error\":\"Failed to spawn actor\"}");

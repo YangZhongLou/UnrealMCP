@@ -14,17 +14,23 @@
 #include "Serialization/JsonWriter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
+#include "Async/Async.h"
 
 static AActor* FindActor(UWorld* World, const FString& Name)
 {
-    for (TActorIterator<AActor> It(World); It; ++It)
+    AActor* Result = nullptr;
+    FEvent* Done = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (It->GetName() == Name)
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            return *It;
+            if (It->GetName() == Name) { Result = *It; break; }
         }
-    }
-    return nullptr;
+        Done->Trigger();
+    });
+    Done->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(Done);
+    return Result;
 }
 
 static UMeshComponent* FindMeshComponent(AActor* Actor, const FString& ComponentName, int32 SlotIndex)
