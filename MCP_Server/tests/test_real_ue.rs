@@ -156,3 +156,60 @@ async fn test_real_ue_get_current_level() {
     assert!(!path.is_empty(), "Level path is empty");
     assert!(r["result"]["actor_count"].as_u64().unwrap() > 0, "Level should have actors");
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_select_and_focus() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestFocus_{}", timestamp);
+
+    // Spawn
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [500.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    // Select the actor
+    let r = client.send_command("select_actor", json!({
+        "actorName": actor_name
+    })).await.unwrap();
+    println!("Select: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "select_actor failed: {:?}", r);
+
+    // Focus viewport on the actor
+    let r = client.send_command("focus_viewport", json!({
+        "actorName": actor_name
+    })).await.unwrap();
+    println!("Focus: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "focus_viewport failed: {:?}", r);
+
+    // Verify selection
+    let r = client.send_command("get_selected_actors", json!({})).await.unwrap();
+    println!("Selected: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_selected_actors failed: {:?}", r);
+
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_save_current_level() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    // First create a named level so SaveLevel doesn't show "Save As" dialog
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let level_path = format!("/Game/Maps/SaveTest_{}", timestamp);
+    client.send_command("create_level", json!({"path": level_path})).await.unwrap();
+
+    // Now save should work without dialog
+    let r = client.send_command("save_current_level", json!({})).await.unwrap();
+    println!("Save: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "save_current_level failed: {:?}", r);
+    assert_eq!(r["result"]["saved"], true);
+}

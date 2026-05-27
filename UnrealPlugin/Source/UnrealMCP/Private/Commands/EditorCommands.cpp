@@ -38,8 +38,15 @@ FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
 {
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
     bool bSaved = false;
-    if (GEditor)
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GEditor->GetEditorWorldContext().World();
         if (World)
@@ -47,7 +54,11 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
             FEditorFileUtils::SaveLevel(World->GetCurrentLevel());
             bSaved = true;
         }
-    }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     if (bSaved)
     {
@@ -288,48 +299,51 @@ FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":false,\"error\":\"No world available\"}");
     }
 
+    // Pre-parse params outside GameThread
+    bool bUseActor = Params->HasField(TEXT("actorName"));
+    FString ActorName = bUseActor ? Params->GetStringField(TEXT("actorName")) : TEXT("");
     FVector TargetLocation = FVector::ZeroVector;
-
-    if (Params->HasField(TEXT("actorName")))
-    {
-        FString ActorName = Params->GetStringField(TEXT("actorName"));
-        AActor* Actor = nullptr;
-        for (TActorIterator<AActor> It(World); It; ++It)
-        {
-            if (It->GetName() == ActorName)
-            {
-                Actor = *It;
-                break;
-            }
-        }
-
-        if (!Actor)
-        {
-            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-        }
-
-        TargetLocation = Actor->GetActorLocation();
-    }
-    else if (Params->HasField(TEXT("location")))
+    if (!bUseActor && Params->HasField(TEXT("location")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
         if (Arr.Num() >= 3)
-        {
-            TargetLocation.X = Arr[0]->AsNumber();
-            TargetLocation.Y = Arr[1]->AsNumber();
-            TargetLocation.Z = Arr[2]->AsNumber();
-        }
+            TargetLocation = FVector(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
     }
-    else
+    else if (!bUseActor)
     {
         return TEXT("{\"success\":false,\"error\":\"Provide actorName or location\"}");
     }
 
-    if (GCurrentLevelEditingViewportClient)
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        GCurrentLevelEditingViewportClient->SetViewLocation(TargetLocation);
-        GCurrentLevelEditingViewportClient->Invalidate();
-    }
+        if (bUseActor)
+        {
+            AActor* Actor = nullptr;
+            for (TActorIterator<AActor> It(World); It; ++It)
+            {
+                if (It->GetName() == ActorName) { Actor = *It; break; }
+            }
+            if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+            TargetLocation = Actor->GetActorLocation();
+        }
+
+        if (GCurrentLevelEditingViewportClient)
+        {
+            GCurrentLevelEditingViewportClient->SetViewLocation(TargetLocation);
+            GCurrentLevelEditingViewportClient->Invalidate();
+        }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("focused_at"), FString::Printf(TEXT("[%.0f, %.0f, %.0f]"),
@@ -388,32 +402,33 @@ FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
     }
 
-    UWorld* World = GEditor->GetEditorWorldContext().World();
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    AActor* TargetActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (It->GetName() == ActorName)
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* TargetActor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            TargetActor = *It;
-            break;
+            if (It->GetName() == ActorName) { TargetActor = *It; break; }
         }
-    }
 
-    if (!TargetActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
+        if (!TargetActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    if (!bAddToSelection)
-    {
-        GEditor->SelectNone(false, true);
-    }
-    GEditor->SelectActor(TargetActor, true, true, true);
+        if (!bAddToSelection)
+            GEditor->SelectNone(false, true);
+        GEditor->SelectActor(TargetActor, true, true, true);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"selected\":\"%s\"}}"), *ActorName);
 }
