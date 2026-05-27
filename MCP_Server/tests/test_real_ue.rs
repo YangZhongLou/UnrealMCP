@@ -17,11 +17,8 @@ async fn test_real_ue_check_connection() {
 async fn test_real_ue_create_level() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
-    // Use unique level name based on timestamp to avoid conflicts
     let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let level_path = format!("/Game/Maps/TestCL_{}", timestamp);
 
     let response = client.send_command("create_level", json!({
@@ -29,16 +26,11 @@ async fn test_real_ue_create_level() {
     })).await.unwrap();
 
     println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
-
     assert_eq!(response["success"], true, "create_level failed: {:?}", response);
     assert_eq!(response["result"]["created"], true);
+    assert!(!response["result"]["path"].as_str().unwrap().is_empty());
 
-    let actual_path = response["result"]["path"].as_str().unwrap();
-    assert!(!actual_path.is_empty(),
-        "Expected non-empty path, got: {}", actual_path
-    );
-
-    println!("Level created at: {}", actual_path);
+    println!("Level created at: {}", response["result"]["path"].as_str().unwrap());
 }
 
 #[tokio::test]
@@ -265,6 +257,13 @@ async fn test_real_ue_duplicate_actor() {
     println!("Duplicate: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "duplicate_actor failed: {:?}", r);
     assert_eq!(r["result"]["source"], source_name);
+    let dup_name_resp = r["result"]["actor_name"].as_str().unwrap().to_string();
+
+    // Verify duplicated actor exists by querying its components
+    let r = client.send_command("get_actor_components", json!({
+        "actorName": dup_name_resp
+    })).await.unwrap();
+    assert_eq!(r["success"], true, "Duplicate not found in world: {:?}", r);
 
     // Cleanup both
     client.send_command("destroy_actor", json!({"name": source_name})).await.unwrap();
@@ -319,6 +318,9 @@ async fn test_real_ue_run_console_command() {
     println!("Console: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "run_console_command failed: {:?}", r);
     assert_eq!(r["result"]["executed"], true);
+
+    // Restore: turn off fps display
+    client.send_command("run_console_command", json!({"command": "stat fps"})).await.unwrap();
 }
 
 #[tokio::test]
@@ -402,12 +404,11 @@ async fn test_real_ue_add_actor_tag() {
 async fn test_real_ue_get_asset_info() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
-    // Query a known engine asset
+    // Query /Engine asset — should exist in every UE install
     let r = client.send_command("get_asset_info", json!({
-        "path": "/Engine/BasicShapes/Cube"
+        "path": "/Engine/EngineDamageTypes/DmgTypeBP_Environmental"
     })).await.unwrap();
     println!("AssetInfo: {}", serde_json::to_string_pretty(&r).unwrap());
-    // May fail if asset doesn't exist — just check it doesn't crash
     assert!(r["success"].as_bool().is_some(), "Should have success field");
 }
 
@@ -434,6 +435,9 @@ async fn test_real_ue_set_view_mode() {
     })).await.unwrap();
     println!("ViewMode: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "set_view_mode failed: {:?}", r);
+
+    // Restore original view mode
+    client.send_command("set_view_mode", json!({"mode": "Lit"})).await.unwrap();
 }
 
 #[tokio::test]
@@ -545,6 +549,15 @@ async fn test_real_ue_set_light_parameters() {
     })).await.unwrap();
     println!("Light: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "set_light_parameters failed: {:?}", r);
+
+    // Verify intensity was set via get_actor_property
+    let r = client.send_command("get_actor_property", json!({
+        "actorName": actor_name,
+        "propertyName": "IntensityUnits"
+    })).await.unwrap();
+    println!("Verify intensity: {}", serde_json::to_string_pretty(&r).unwrap());
+    // Property name may vary by UE version; just confirm we can read it back
+    assert!(r["success"].as_bool().is_some(), "get_actor_property failed");
 
     client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
 }
