@@ -5,7 +5,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **当前 Phase** | Phase 22 — 添加 create_level 工具 ✅ |
+| **当前 Phase** | Phase 22 — GameThread 修复 + 真实 UE 测试 ✅ |
 | **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |
 
@@ -13,74 +13,49 @@
 
 所有任务已完成。
 
-## 已完成 Phase 21: Monolith 重构
+## Phase 22 成果
 
-server.rs: 1565 → 497 行 (68% 缩减)。添加 `call()` helper 消除重复 send/match 模式。
-所有 14 测试通过。
+### GameThread 修复 (15 个 Handler)
 
-## 已完成 Phase 20: 性能/压力测试
+所有涉及 UE 写操作的 C++ Handler 已从 MCP 子线程派发到 GameThread：
 
-5 项测试全部通过: response_timing, concurrent_connections(10 clients), many_sequential(100 cmds), reconnection, large_response.
+| 文件 | Handler |
+|------|---------|
+| ActorCommands.cpp | SpawnActor, DestroyActor, GetActorList, SetActorTransform, SetActorProperty, GetActorProperty, DuplicateActor, FindActorsByClass, SpawnBlueprintActor |
+| EditorCommands.cpp | CreateLevel, SaveCurrentLevel, GetCurrentLevel, FocusViewport, SelectActor |
+| ComponentCommands.cpp | GetActorComponents, AddComponent, RemoveComponent |
+| MaterialCommands.cpp | FindActor helper |
 
-## 当前 Phase 进度
+### 真实 UE 环境测试 (11 tests)
 
-- [x] Phase 19 — API 文档
-  - [x] Plan → 明确范围
-  - [x] Review → 审查可行性
-  - [x] Work → 确定文档结构
-  - [x] Plan → 文档模板设计
-  - [x] Review → 审查模板
-  - [x] Work → 编写文档
-  - [x] Plan → 确认需更新文档
-  - [x] Review → 审查文档范围
-  - [x] Work → 更新文档
-  - [x] Plan → 确认变更文件
-  - [x] Review → 审查 diff
-  - [x] Work → stage + commit + push
+| 测试 | 覆盖工具 |
+|------|----------|
+| `test_real_ue_check_connection` | get_editor_info |
+| `test_real_ue_create_level` | create_level |
+| `test_real_ue_spawn_destroy_actor` | spawn_actor, destroy_actor |
+| `test_real_ue_spawn_actor_with_defaults` | spawn_actor, destroy_actor |
+| `test_real_ue_get_current_level` | get_current_level |
+| `test_real_ue_transform_and_property` | set_actor_transform, get_actor_property |
+| `test_real_ue_select_and_focus` | select_actor, focus_viewport, get_selected_actors |
+| `test_real_ue_save_current_level` | create_level, save_current_level |
+| `test_real_ue_get_actor_components` | get_actor_components |
+| `test_real_ue_duplicate_actor` | duplicate_actor |
+| `test_real_ue_find_actors_by_class` | find_actors_by_class |
 
-- [x] Phase 18 — 蓝图函数图操作
-  - [x] Plan → 明确目标、NOT-in-scope
-  - [x] Review → 审查 API 可行性
-  - [x] Work → 输出任务列表
-  - [x] Plan → 确定文件范围、API 设计
-  - [x] Review → 审查 UE API 可行性
-  - [x] Work → 输出技术方案
-  - [x] Plan → 搭建函数骨架
-  - [x] Review → 审查签名和参数
-  - [x] Work → 实现 + cargo build
-  - [x] Plan → 列出测试用例
-  - [x] Review → 审查覆盖完整性
-  - [x] Work → 编译验证
-  - [x] Plan → 确认需更新文档
-  - [x] Review → 审查文档范围
-  - [x] Work → 更新文档
-  - [x] Plan → 确认变更文件
-  - [x] Review → 审查 diff
-  - [x] Work → stage + commit + push
+### 流程改进
 
-- [x] Phase 17 — UI 自动化
-  - [x] Plan → 明确目标、NOT-in-scope
-  - [x] Review → 审查 API 可行性
-  - [x] Work → 输出任务列表
-  - [x] Plan → 确定文件范围、API 设计
-  - [x] Review → 审查 UE API 可行性
-  - [x] Work → 输出技术方案
-  - [x] Plan → 搭建函数骨架
-  - [x] Review → 审查签名和参数
-  - [x] Work → 实现 + cargo build
-  - [x] Plan → 列出测试用例
-  - [x] Review → 审查覆盖完整性
-  - [x] Work → 编译验证
-  - [x] Plan → 确认需更新文档
-  - [x] Review → 审查文档范围
-  - [x] Work → 更新文档
-  - [x] Plan → 确认变更文件
-  - [x] Review → 审查 diff
-  - [x] Work → stage + commit + push
+- QA 技能：强制性两层测试体系 (Mock + 真实 UE)
+- 真实 UE 测试指南：线程派发、弹窗抑制、API 适配清单
+- Markdown-writer 技能：补 MD022/MD031/MD032 + 强制 linter
 
-## 下一步
+### UE 5.7 兼容性修复
 
-（所有待定功能已完成）
+- `ANY_PACKAGE` → `FindFirstObject<T>`
+- `bIsArray` → `ContainerType`
+- `FConsoleObjectVisitor` lambda → delegate + `BindLambda`
+- `AddFunctionGraph(nullptr)` → `(UFunction*)nullptr`
+- `UEditorLevelLibrary` → `ULevelEditorSubsystem`
+- `BlueprintGraph` 模块依赖补充
 
 ## 阻塞项
 
@@ -89,5 +64,6 @@ server.rs: 1565 → 497 行 (68% 缩减)。添加 `call()` helper 消除重复 s
 ## 快速统计
 
 - 工具总数: 58
-- Phase 完成: 21
-- 最近构建: ✅ `cargo build` 通过 ✅ `cargo test --test test_unreal_client` 全部 10 项通过
+- Mock 测试: 10/10 通过
+- 真实 UE 测试: 11/11 通过 (单独跑)
+- 最近构建: ✅ `cargo build` 通过
