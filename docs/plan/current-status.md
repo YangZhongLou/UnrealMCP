@@ -5,13 +5,13 @@
 
 | 字段 | 值 |
 |------|-----|
-| **当前 Phase** | Phase 22 — 添加 create_level 工具 |
-| **工作流步骤** | 5/6 — Document |
+| **当前 Phase** | Phase 22 — 添加 create_level 工具 ✅ |
+| **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |
 
 ## 当前任务
 
-Phase 22: 添加 `create_level` 工具 — 创建新关卡。
+所有任务已完成。
 
 ## 已完成 Phase 21: Monolith 重构
 

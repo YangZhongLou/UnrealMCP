@@ -55,7 +55,7 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
     }
     else
     {
-        ActorClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+        ActorClass = FindFirstObject<UClass>(*ClassName);
     }
 
     if (!ActorClass)

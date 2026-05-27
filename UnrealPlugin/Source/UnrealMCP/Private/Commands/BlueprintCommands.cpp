@@ -32,7 +32,7 @@ FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params)
         Path = TEXT("/Game/Blueprints");
     }
 
-    UClass* ParentClass = FindObject<UClass>(ANY_PACKAGE, *ParentClassName);
+    UClass* ParentClass = FindFirstObject<UClass>(*ParentClassName);
     if (!ParentClass)
     {
         ParentClass = AActor::StaticClass();
@@ -147,7 +147,7 @@ static UFunction* FindFunctionByName(const FString& FunctionName)
         if (Func) return Func;
     }
 
-    return FindObject<UFunction>(ANY_PACKAGE, *FunctionName);
+    return FindFirstObject<UFunction>(*FunctionName);
 }
 
 FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params)
@@ -204,7 +204,7 @@ FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params)
 
         if (Params->HasField(TEXT("class_name")))
         {
-            UClass* Class = FindObject<UClass>(ANY_PACKAGE, *Params->GetStringField(TEXT("class_name")));
+            UClass* Class = FindFirstObject<UClass>(*Params->GetStringField(TEXT("class_name")));
             if (Class) { Function = Class->FindFunctionByName(*FunctionName); }
         }
         else
@@ -583,7 +583,7 @@ static bool ParsePinType(const FString& TypeName, FEdGraphPinType& OutPinType)
     }
     // Object types
     {
-        UClass* FoundClass = FindObject<UClass>(ANY_PACKAGE, *TypeName);
+        UClass* FoundClass = FindFirstObject<UClass>(*TypeName);
         if (FoundClass && FoundClass->IsChildOf<UObject>())
         {
             OutPinType.PinCategory = TEXT("object");
@@ -623,7 +623,7 @@ FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params)
         return FString::Printf(TEXT("{\"success\":false,\"error\":\"Unsupported variable type: %s\"}"), *VarType);
     }
 
-    NewVar.VarType.bIsArray = bIsArray;
+    NewVar.VarType.ContainerType = bIsArray ? EPinContainerType::Array : EPinContainerType::None;
     NewVar.DefaultValue = TEXT("");
 
     Blueprint->NewVariables.Add(NewVar);
@@ -739,7 +739,7 @@ FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params
         return TEXT("{\"success\":false,\"error\":\"Failed to create function graph\"}");
     }
 
-    FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, true, nullptr);
+    FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, true, (UFunction*)nullptr);
 
     // Set function category if provided
     if (!Category.IsEmpty())

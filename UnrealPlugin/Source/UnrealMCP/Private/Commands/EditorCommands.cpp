@@ -16,6 +16,8 @@
 #include "LogCaptureDevice.h"
 #include "HAL/IConsoleManager.h"
 #include "Framework/Docking/TabManager.h"
+#include "LevelEditorSubsystem.h"
+#include "Async/Async.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -54,26 +56,44 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
     return TEXT("{\"success\":false,\"error\":\"Failed to save level\"}");
 }
 
-#include "EditorLevelLibrary.h"
-
 FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
 {
     FString Path = Params->GetStringField(TEXT("path"));
 
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
     bool bCreated = false;
     FString LevelPath;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    if (GEditor)
+    // Dispatch to GameThread — NewLevel and SaveLevel require GameThread
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        UWorld* World = GEditor->GetEditorWorldContext().World();
-        if (World)
+        if (GEditor)
         {
-            UEditorLevelLibrary::NewLevel(Path);
-            FEditorFileUtils::SaveLevel(World->GetCurrentLevel());
-            bCreated = true;
-            LevelPath = World->GetOutermost()->GetName();
+            // Save all dirty packages without prompting to avoid dialog in NewLevel
+            FEditorFileUtils::SaveDirtyPackages(false, true, true);
+
+            ULevelEditorSubsystem* LevelEditor = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
+            if (LevelEditor && LevelEditor->NewLevel(Path))
+            {
+                UWorld* NewWorld = GEditor->GetEditorWorldContext().World();
+                if (NewWorld)
+                {
+                    FEditorFileUtils::SaveLevel(NewWorld->GetCurrentLevel());
+                    bCreated = true;
+                    LevelPath = NewWorld->GetOutermost()->GetName();
+                }
+            }
         }
-    }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     if (bCreated)
     {
@@ -86,8 +106,7 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
         FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
         Writer->Close();
 
-        FString Out = FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
-        return Out;
+        return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
     }
     return TEXT("{\"success\":false,\"error\":\"Failed to create level\"}");
 }
@@ -546,16 +565,16 @@ FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params)
     TArray<TSharedPtr<FJsonValue>> LogArray;
     for (const FLogEntry& Entry : Logs)
     {
-        TSharedPtr<FJsonObject> LogObj = MakeShareable(new FJsonObject);
-        LogObj->SetStringField(TEXT("timestamp"), Entry.Timestamp.ToString());
-        LogObj->SetStringField(TEXT("category"), Entry.Category);
-        LogObj->SetStringField(TEXT("verbosity"),
+        TSharedPtr<FJsonObject> LogEntryObj = MakeShareable(new FJsonObject);
+        LogEntryObj->SetStringField(TEXT("timestamp"), Entry.Timestamp.ToString());
+        LogEntryObj->SetStringField(TEXT("category"), Entry.Category);
+        LogEntryObj->SetStringField(TEXT("verbosity"),
             Entry.Verbosity == ELogVerbosity::Error ? TEXT("Error") :
             Entry.Verbosity == ELogVerbosity::Warning ? TEXT("Warning") :
             Entry.Verbosity == ELogVerbosity::Log ? TEXT("Log") :
             Entry.Verbosity == ELogVerbosity::Verbose ? TEXT("Verbose") : TEXT("VeryVerbose"));
-        LogObj->SetStringField(TEXT("message"), Entry.Message);
-        LogArray.Add(MakeShareable(new FJsonValueObject(LogObj)));
+        LogEntryObj->SetStringField(TEXT("message"), Entry.Message);
+        LogArray.Add(MakeShareable(new FJsonValueObject(LogEntryObj)));
     }
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
@@ -685,15 +704,16 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
 
     TArray<TSharedPtr<FJsonValue>> Commands;
 
-    auto Visitor = [&Commands](const TCHAR* Name, IConsoleObject* Obj)
+    FConsoleObjectVisitor VisitorDelegate;
+    VisitorDelegate.BindLambda([&Commands](const TCHAR* Name, IConsoleObject* Obj)
     {
         TSharedPtr<FJsonObject> Cmd = MakeShareable(new FJsonObject);
         Cmd->SetStringField(TEXT("name"), FString(Name));
         Cmd->SetStringField(TEXT("help"), Obj->GetHelp());
         Commands.Add(MakeShareable(new FJsonValueObject(Cmd)));
-    };
+    });
 
-    IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(Visitor, *Prefix);
+    IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(VisitorDelegate, *Prefix);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("prefix"), Prefix);

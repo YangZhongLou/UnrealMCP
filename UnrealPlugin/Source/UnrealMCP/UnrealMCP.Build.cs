@@ -42,7 +42,8 @@ public class UnrealMCP : ModuleRules
                 "Slate",
                 "SlateCore",
                 "UMG",
-                "Kismet"
+                "Kismet",
+                "BlueprintGraph"
             }
         );
 
