@@ -41,6 +41,22 @@
 | `test_real_ue_get_actor_components` | get_actor_components |
 | `test_real_ue_duplicate_actor` | duplicate_actor |
 | `test_real_ue_find_actors_by_class` | find_actors_by_class |
+| `test_real_ue_get_asset_list` | get_asset_list |
+| `test_real_ue_get_viewport_camera` | get_viewport_camera |
+| `test_real_ue_run_console_command` | run_console_command |
+| `test_real_ue_get_editor_commands` | get_editor_commands |
+| `test_real_ue_set_actor_property` | set_actor_property, get_actor_property |
+| `test_real_ue_add_actor_tag` | add_actor_tag |
+| `test_real_ue_get_asset_info` | get_asset_info |
+| `test_real_ue_get_ue_logs` | get_ue_logs |
+| `test_real_ue_set_view_mode` | set_view_mode |
+| `test_real_ue_show_debug` | show_debug |
+| `test_real_ue_take_screenshot` | take_screenshot |
+| `test_real_ue_simulate_key` | simulate_key |
+| `test_real_ue_add_remove_component` | add_component, remove_component |
+| `test_real_ue_set_light_parameters` | set_light_parameters |
+| `test_real_ue_execute_editor_command` | execute_editor_command |
+| `test_real_ue_focus_editor_panel` | focus_editor_panel |
 
 ### 流程改进
 
@@ -65,5 +81,6 @@
 
 - 工具总数: 58
 - Mock 测试: 10/10 通过
-- 真实 UE 测试: 11/11 通过 (单独跑)
+- 真实 UE 测试: 26/26 通过 (单独跑)
+- GameThread 修复: 22 个 Handler
 - 最近构建: ✅ `cargo build` 通过
