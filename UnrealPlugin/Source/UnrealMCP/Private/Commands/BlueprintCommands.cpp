@@ -8,6 +8,9 @@
 #include "K2Node_CallFunction.h"
 #include "K2Node_Event.h"
 #include "K2Node_CustomEvent.h"
+#include "K2Node_FunctionEntry.h"
+#include "K2Node_FunctionResult.h"
+#include "EdGraphSchema_K2.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "EdGraph/EdGraph.h"
@@ -666,6 +669,207 @@ FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params)
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("variable_name"), VarName);
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+// Find a graph by name in a Blueprint (searches FunctionGraphs, UbergraphPages, DelegateSignatureGraphs)
+static UEdGraph* FindGraph(UBlueprint* Blueprint, const FString& Name)
+{
+    for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+    {
+        if (Graph->GetName() == Name) return Graph;
+    }
+    for (UEdGraph* Graph : Blueprint->UbergraphPages)
+    {
+        if (Graph->GetName() == Name) return Graph;
+    }
+    for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs)
+    {
+        if (Graph->GetName() == Name) return Graph;
+    }
+    return nullptr;
+}
+
+// Find FunctionEntry node in a graph, return its node GUID as string
+static FString GetEntryNodeId(UEdGraph* Graph)
+{
+    for (UEdGraphNode* Node : Graph->Nodes)
+    {
+        if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+        {
+            return Entry->NodeGuid.ToString();
+        }
+    }
+    return TEXT("");
+}
+
+FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+    FString FunctionName = Params->GetStringField(TEXT("function_name"));
+    FString Category = Params->HasField(TEXT("category"))
+        ? Params->GetStringField(TEXT("category"))
+        : TEXT("");
+
+    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+    if (!Blueprint)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
+    }
+
+    // Check for existing graph with same name
+    if (FindGraph(Blueprint, FunctionName))
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Function already exists: %s\"}"), *FunctionName);
+    }
+
+    UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(
+        Blueprint, FName(*FunctionName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+
+    if (!NewGraph)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Failed to create function graph\"}");
+    }
+
+    FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, true, nullptr);
+
+    // Set function category if provided
+    if (!Category.IsEmpty())
+    {
+        NewGraph->GetSchema()->CreateDefaultNodesForGraph(*NewGraph);
+        for (UEdGraphNode* Node : NewGraph->Nodes)
+        {
+            if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+            {
+                Entry->MetaData.Category = FText::FromString(Category);
+                break;
+            }
+        }
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    FString EntryId = GetEntryNodeId(NewGraph);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("graph_name"), FunctionName);
+    Result->SetStringField(TEXT("function_name"), FunctionName);
+    Result->SetStringField(TEXT("entry_node_id"), EntryId);
+    Result->SetNumberField(TEXT("node_count"), NewGraph->Nodes.Num());
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+
+    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+    if (!Blueprint)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Graphs;
+
+    auto AddGraph = [&Graphs](UEdGraph* Graph, const FString& Type)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+        Obj->SetStringField(TEXT("name"), Graph->GetName());
+        Obj->SetStringField(TEXT("type"), Type);
+        Obj->SetNumberField(TEXT("node_count"), Graph->Nodes.Num());
+
+        FString EntryId;
+        for (UEdGraphNode* Node : Graph->Nodes)
+        {
+            if (Cast<UK2Node_FunctionEntry>(Node))
+            {
+                EntryId = Node->NodeGuid.ToString();
+                break;
+            }
+        }
+        if (!EntryId.IsEmpty())
+        {
+            Obj->SetStringField(TEXT("entry_node_id"), EntryId);
+        }
+
+        Graphs.Add(MakeShareable(new FJsonValueObject(Obj)));
+    };
+
+    for (UEdGraph* Graph : Blueprint->UbergraphPages)
+    {
+        AddGraph(Graph, TEXT("EventGraph"));
+    }
+    for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+    {
+        AddGraph(Graph, TEXT("FunctionGraph"));
+    }
+    for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs)
+    {
+        AddGraph(Graph, TEXT("DelegateSignature"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetNumberField(TEXT("count"), Graphs.Num());
+    Result->SetArrayField(TEXT("graphs"), Graphs);
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+    FString GraphName = Params->GetStringField(TEXT("graph_name"));
+
+    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+    if (!Blueprint)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
+    }
+
+    UEdGraph* Graph = FindGraph(Blueprint, GraphName);
+    if (!Graph)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Graph not found: %s\"}"), *GraphName);
+    }
+
+    // Refuse to delete EventGraph
+    for (UEdGraph* EventGraph : Blueprint->UbergraphPages)
+    {
+        if (EventGraph == Graph)
+        {
+            return TEXT("{\"success\":false,\"error\":\"Cannot delete the EventGraph\"}");
+        }
+    }
+
+    FBlueprintEditorUtils::RemoveGraph(Blueprint, Graph, EGraphRemoveFlags::Recompile);
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("graph_name"), GraphName);
+    Result->SetBoolField(TEXT("deleted"), true);
 
     TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
     Response->SetBoolField(TEXT("success"), true);

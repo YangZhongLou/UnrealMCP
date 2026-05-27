@@ -1425,6 +1425,80 @@ impl UnrealMcpServer {
         }
     }
 
+    #[tool(description = "Create a new function graph in a Blueprint")]
+    async fn create_blueprint_function_graph(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Function name")]
+        function_name: String,
+        #[tool(param)]
+        #[schemars(description = "Optional function category")]
+        category: Option<String>,
+    ) -> String {
+        let mut params = json!({"path": path, "function_name": function_name});
+        if let Some(c) = category { params["category"] = json!(c); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("create_blueprint_function_graph", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Function created: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "List all graphs (EventGraph, FunctionGraphs, Delegates) in a Blueprint")]
+    async fn list_blueprint_graphs(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("list_blueprint_graphs", json!({"path": path})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    let result = &response["result"];
+                    let count = result["count"].as_i64().unwrap_or(0);
+                    format!("{} graphs: {}", count, result["graphs"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Delete a function graph from a Blueprint (EventGraph cannot be deleted)")]
+    async fn delete_blueprint_graph(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Graph/function name to delete")]
+        graph_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("delete_blueprint_graph", json!({"path": path, "graph_name": graph_name})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Deleted: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
     #[tool(description = "Export an asset to a file on disk")]
     async fn export_asset(
         &self,

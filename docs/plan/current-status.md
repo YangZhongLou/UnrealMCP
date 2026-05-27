@@ -5,7 +5,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| **当前 Phase** | Phase 17 — UI 自动化 ✅ |
+| **当前 Phase** | Phase 18 — 蓝图函数图操作 ✅ |
 | **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |
 
@@ -14,6 +14,26 @@
 等待规划下一个 Phase。
 
 ## 当前 Phase 进度
+
+- [x] Phase 18 — 蓝图函数图操作
+  - [x] Plan → 明确目标、NOT-in-scope
+  - [x] Review → 审查 API 可行性
+  - [x] Work → 输出任务列表
+  - [x] Plan → 确定文件范围、API 设计
+  - [x] Review → 审查 UE API 可行性
+  - [x] Work → 输出技术方案
+  - [x] Plan → 搭建函数骨架
+  - [x] Review → 审查签名和参数
+  - [x] Work → 实现 + cargo build
+  - [x] Plan → 列出测试用例
+  - [x] Review → 审查覆盖完整性
+  - [x] Work → 编译验证
+  - [x] Plan → 确认需更新文档
+  - [x] Review → 审查文档范围
+  - [x] Work → 更新文档
+  - [x] Plan → 确认变更文件
+  - [x] Review → 审查 diff
+  - [x] Work → stage + commit + push
 
 - [x] Phase 17 — UI 自动化
   - [x] Plan → 明确目标、NOT-in-scope
@@ -37,7 +57,8 @@
 
 ## 下一步
 
-1. 蓝图函数图操作 (P1) — 在蓝图中创建/编辑 Function Graph
+1. 性能/压力测试 (P1) — 大场景操作响应时间、并发连接、内存泄漏测试
+2. API 文档 (P1) — 所有 Tools 的详细说明文档
 
 ## 阻塞项
 
@@ -45,6 +66,6 @@
 
 ## 快速统计
 
-- 工具总数: 54
-- Phase 完成: 17
+- 工具总数: 57
+- Phase 完成: 18
 - 最近构建: ✅ `cargo build` 通过

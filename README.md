@@ -49,7 +49,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (54 个工具)
+## 已实现功能 (57 个工具)
 
 ### Actor 操作 (9)
 | Tool | 描述 |
@@ -82,7 +82,7 @@ UnrealMCP/
 | `focus_editor_panel` | 聚焦编辑器面板 |
 | `get_editor_commands` | 列出可用的编辑器命令 |
 
-### 蓝图操作 (8)
+### 蓝图操作 (11)
 | Tool | 描述 |
 |------|------|
 | `create_blueprint` | 创建 Blueprint 资产 |
@@ -93,6 +93,9 @@ UnrealMCP/
 | `get_blueprint_graph` | 获取蓝图图形结构 (节点/引脚/连接) |
 | `add_blueprint_variable` | 给蓝图添加变量 (支持 int/float/bool/Vector 等) |
 | `remove_blueprint_variable` | 从蓝图删除变量 |
+| `create_blueprint_function_graph` | 创建蓝图函数图 |
+| `list_blueprint_graphs` | 列出蓝图所有图 |
+| `delete_blueprint_graph` | 删除蓝图函数图 |
 
 ### 资产操作 (6)
 | Tool | 描述 |

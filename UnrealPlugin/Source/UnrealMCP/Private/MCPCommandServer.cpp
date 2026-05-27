@@ -58,6 +58,9 @@ FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params);
 FString HandleExecuteEditorCommand(const TSharedPtr<FJsonObject>& Params);
 FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
+FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -447,6 +450,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("get_editor_commands"))
     {
         ResultStr = HandleGetEditorCommands(Params);
+    }
+    else if (Method == TEXT("create_blueprint_function_graph"))
+    {
+        ResultStr = HandleCreateBlueprintFunctionGraph(Params);
+    }
+    else if (Method == TEXT("list_blueprint_graphs"))
+    {
+        ResultStr = HandleListBlueprintGraphs(Params);
+    }
+    else if (Method == TEXT("delete_blueprint_graph"))
+    {
+        ResultStr = HandleDeleteBlueprintGraph(Params);
     }
     else
     {
