@@ -333,3 +333,93 @@ async fn test_real_ue_get_editor_commands() {
     assert_eq!(r["success"], true, "get_editor_commands failed: {:?}", r);
     assert!(r["result"]["count"].as_u64().unwrap() > 0, "Should find stat commands");
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_set_actor_property() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestProp_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    // Set bHidden to true
+    let r = client.send_command("set_actor_property", json!({
+        "actorName": actor_name,
+        "propertyName": "bHidden",
+        "value": {"BoolValue": true}
+    })).await.unwrap();
+    println!("SetProp: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "set_actor_property failed: {:?}", r);
+    assert_eq!(r["result"]["set"], true);
+
+    // Verify
+    let r = client.send_command("get_actor_property", json!({
+        "actorName": actor_name,
+        "propertyName": "bHidden"
+    })).await.unwrap();
+    println!("GetProp: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true);
+    assert_eq!(r["result"]["value"], true);
+
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_add_actor_tag() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestTag_{}", timestamp);
+    let tag = format!("TestTag_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 0.0]
+    })).await.unwrap();
+
+    let r = client.send_command("add_actor_tag", json!({
+        "actorName": actor_name,
+        "tag": tag
+    })).await.unwrap();
+    println!("Tag: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "add_actor_tag failed: {:?}", r);
+
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_asset_info() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    // Query a known engine asset
+    let r = client.send_command("get_asset_info", json!({
+        "path": "/Engine/BasicShapes/Cube"
+    })).await.unwrap();
+    println!("AssetInfo: {}", serde_json::to_string_pretty(&r).unwrap());
+    // May fail if asset doesn't exist — just check it doesn't crash
+    assert!(r["success"].as_bool().is_some(), "Should have success field");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_ue_logs() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("get_ue_logs", json!({
+        "count": 10
+    })).await.unwrap();
+    println!("Logs: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_ue_logs failed: {:?}", r);
+    assert!(r["result"]["count"].as_u64().is_some(), "Should have count");
+}

@@ -738,22 +738,31 @@ FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params)
     FString ActorName = Params->GetStringField(TEXT("actorName"));
     FString Tag = Params->GetStringField(TEXT("tag"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    AActor* Actor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (It->GetName() == ActorName)
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            Actor = *It;
-            break;
+            if (It->GetName() == ActorName) { Actor = *It; break; }
         }
-    }
 
-    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    Actor->Tags.AddUnique(FName(*Tag));
+        Actor->Tags.AddUnique(FName(*Tag));
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"tag\":\"%s\"}}"), *ActorName, *Tag);
 }
