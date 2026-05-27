@@ -22,14 +22,15 @@
 | Phase 14 | v0.5 | Blueprint Variable 管理 (添加/删除变量) | 2 | ✅ 完成 |
 | Phase 15 | v0.5 | Asset Import/Export | 2 | ✅ 完成 |
 | Phase 16 | v0.6 | 实时日志推送 | 1 | ✅ 完成 |
-| **累计** | | | **51** | |
+| Phase 17 | v0.6 | UI 自动化 | 3 | ✅ 完成 |
+| **累计** | | | **54** | |
 
 ## 工具分布
 
 | 类别 | 工具数 | 工具 |
 |------|--------|------|
 | Actor 操作 | 9 | spawn, destroy, duplicate, list, transform, property get/set, find by class, spawn blueprint |
-| 编辑器操作 | 11 | editor info, console command, save level, PIE start/stop, screenshot, focus viewport, current level, selected actors, select actor, **get ue logs** |
+| 编辑器操作 | 14 | editor info, console command, save level, PIE start/stop, screenshot, focus viewport, current level, selected actors, select actor, get ue logs, **execute editor command**, **focus editor panel**, **get editor commands** |
 | 蓝图操作 | 8 | create, compile, info, add node, connect pins, get graph, add variable, remove variable |
 | 资产操作 | 6 | list, info, delete, rename, import, export |
 | 组件操作 | 3 | get components, add, remove |

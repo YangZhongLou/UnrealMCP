@@ -90,7 +90,7 @@ Use `feat:`, `fix:`, `docs:`, `refactor:`, `chore:` prefixes.
 ## Project State
 
 - **Status Board**: [`docs/plan/current-status.md`](docs/plan/current-status.md) — 当前 Phase、活动任务、阻塞项的唯一真相源
-- **51 tools** across 11 categories — see README.md for full list
+- **54 tools** across 11 categories — see README.md for full list
 - Current branch: `feature/unreal-mcp-init`
 - server.rs is ~1300+ lines (monolith — refactoring deferred)
 

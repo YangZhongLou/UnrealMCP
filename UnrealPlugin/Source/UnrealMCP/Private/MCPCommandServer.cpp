@@ -55,6 +55,9 @@ FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
 FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params);
 FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params);
+FString HandleExecuteEditorCommand(const TSharedPtr<FJsonObject>& Params);
+FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -432,6 +435,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("get_ue_logs"))
     {
         ResultStr = HandleGetLogs(Params);
+    }
+    else if (Method == TEXT("execute_editor_command"))
+    {
+        ResultStr = HandleExecuteEditorCommand(Params);
+    }
+    else if (Method == TEXT("focus_editor_panel"))
+    {
+        ResultStr = HandleFocusEditorPanel(Params);
+    }
+    else if (Method == TEXT("get_editor_commands"))
+    {
+        ResultStr = HandleGetEditorCommands(Params);
     }
     else
     {

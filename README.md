@@ -49,7 +49,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (51 个工具)
+## 已实现功能 (54 个工具)
 
 ### Actor 操作 (9)
 | Tool | 描述 |
@@ -78,6 +78,9 @@ UnrealMCP/
 | `get_selected_actors` | 获取当前选中的 Actor |
 | `select_actor` | 选中指定 Actor |
 | `get_ue_logs` | 获取 UE 编辑器输出日志 |
+| `execute_editor_command` | 执行编辑器控制台命令 |
+| `focus_editor_panel` | 聚焦编辑器面板 |
+| `get_editor_commands` | 列出可用的编辑器命令 |
 
 ### 蓝图操作 (8)
 | Tool | 描述 |

@@ -14,6 +14,8 @@
 #include "HAL/PlatformFileManager.h"
 #include "Engine/Engine.h"
 #include "LogCaptureDevice.h"
+#include "HAL/IConsoleManager.h"
+#include "Framework/Docking/TabManager.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -549,4 +551,120 @@ FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params)
     }
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"debug_flag\":\"%s\"}}"), *Flag);
+}
+
+FString HandleExecuteEditorCommand(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Command = Params->GetStringField(TEXT("command"));
+
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    FString FullCmd = FString::Printf(TEXT("editor.%s"), *Command);
+    FString Result;
+
+    if (World)
+    {
+        if (GEngine->Exec(World, *FullCmd))
+        {
+            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+        }
+        else if (GEngine->Exec(World, *Command))
+        {
+            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+        }
+        else
+        {
+            Result = FString::Printf(TEXT("{\"success\":false,\"error\":\"Command not recognized: %s\"}"), *Command);
+        }
+    }
+    else
+    {
+        if (GEngine->Exec(nullptr, *FullCmd))
+        {
+            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+        }
+        else if (GEngine->Exec(nullptr, *Command))
+        {
+            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+        }
+        else
+        {
+            Result = FString::Printf(TEXT("{\"success\":false,\"error\":\"Command not recognized: %s\"}"), *Command);
+        }
+    }
+
+    return Result;
+}
+
+FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Panel = Params->GetStringField(TEXT("panel"));
+
+    static TMap<FString, FName> PanelMap;
+    if (PanelMap.Num() == 0)
+    {
+        PanelMap.Add(TEXT("ContentBrowser"), FName(TEXT("ContentBrowserTab1")));
+        PanelMap.Add(TEXT("WorldOutliner"), FName(TEXT("WorldOutliner")));
+        PanelMap.Add(TEXT("Details"), FName(TEXT("DetailsPanel")));
+        PanelMap.Add(TEXT("OutputLog"), FName(TEXT("OutputLog")));
+        PanelMap.Add(TEXT("Layers"), FName(TEXT("LayersPanel")));
+        PanelMap.Add(TEXT("LevelEditor"), FName(TEXT("LevelEditor")));
+        PanelMap.Add(TEXT("Viewport"), FName(TEXT("LevelEditor")));
+    }
+
+    FName* TabId = PanelMap.Find(Panel);
+    if (!TabId)
+    {
+        TArray<FString> Known;
+        PanelMap.GetKeys(Known);
+        FString KnownStr = FString::Join(Known, TEXT(", "));
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Unknown panel: %s. Known panels: %s\"}"),
+            *Panel, *KnownStr);
+    }
+
+    FGlobalTabmanager::Get()->TryInvokeTab(*TabId);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("panel"), Panel);
+    Result->SetBoolField(TEXT("focused"), true);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Prefix = Params->HasField(TEXT("prefix"))
+        ? Params->GetStringField(TEXT("prefix"))
+        : TEXT("editor.");
+
+    TArray<TSharedPtr<FJsonValue>> Commands;
+
+    auto Visitor = [&Commands](const TCHAR* Name, IConsoleObject* Obj)
+    {
+        TSharedPtr<FJsonObject> Cmd = MakeShareable(new FJsonObject);
+        Cmd->SetStringField(TEXT("name"), FString(Name));
+        Cmd->SetStringField(TEXT("help"), Obj->GetHelp());
+        Commands.Add(MakeShareable(new FJsonValueObject(Cmd)));
+    };
+
+    IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(Visitor, *Prefix);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("prefix"), Prefix);
+    Result->SetNumberField(TEXT("count"), Commands.Num());
+    Result->SetArrayField(TEXT("commands"), Commands);
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }

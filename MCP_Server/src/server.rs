@@ -1360,6 +1360,71 @@ impl UnrealMcpServer {
         }
     }
 
+    #[tool(description = "Execute an editor console command (e.g. 'newlevel', 'undo', 'redo')")]
+    async fn execute_editor_command(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Editor console command name, e.g. 'newlevel', 'undo', 'redo', 'contentbrowser'")]
+        command: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("execute_editor_command", json!({"command": command})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Executed: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Focus/switch to an editor panel by name")]
+    async fn focus_editor_panel(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Panel name: 'ContentBrowser', 'WorldOutliner', 'Details', 'OutputLog', 'Layers', 'LevelEditor', 'Viewport'")]
+        panel: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("focus_editor_panel", json!({"panel": panel})).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Focused: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "List available editor console commands matching a prefix")]
+    async fn get_editor_commands(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Command prefix, default 'editor.'")]
+        prefix: Option<String>,
+    ) -> String {
+        let mut params = json!({});
+        if let Some(p) = prefix { params["prefix"] = json!(p); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("get_editor_commands", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    let result = &response["result"];
+                    let count = result["count"].as_i64().unwrap_or(0);
+                    format!("{} commands matching '{}': {}", count, result["prefix"].as_str().unwrap_or(""), result["commands"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
     #[tool(description = "Export an asset to a file on disk")]
     async fn export_asset(
         &self,
