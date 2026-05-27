@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
+#include "Async/Async.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -81,7 +82,18 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
         SpawnParams.Name = FName(*ActorName);
     }
 
-    AActor* SpawnedActor = World->SpawnActor<AActor>(ActorClass, Location, FRotator::ZeroRotator, SpawnParams);
+    AActor* SpawnedActor = nullptr;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        SpawnedActor = World->SpawnActor<AActor>(ActorClass, Location, FRotator::ZeroRotator, SpawnParams);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
     if (!SpawnedActor)
     {
         return TEXT("{\"success\":false,\"error\":\"Failed to spawn actor\"}");
@@ -327,7 +339,15 @@ FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params)
 
     if (Found && *Found)
     {
-        (*Found)->Destroy();
+        FEvent* DestroyDone = FPlatformProcess::GetSynchEventFromPool();
+        AsyncTask(ENamedThreads::GameThread, [Found, DestroyDone]()
+        {
+            (*Found)->Destroy();
+            DestroyDone->Trigger();
+        });
+        DestroyDone->Wait();
+        FPlatformProcess::ReturnSynchEventToPool(DestroyDone);
+
         SpawnedActors.Remove(Name);
         return TEXT("{\"success\":true,\"result\":{\"destroyed\":true}}");
     }
@@ -408,13 +428,22 @@ FString HandleGetActorList(const TSharedPtr<FJsonObject>& Params)
     }
 
     TArray<TSharedPtr<FJsonValue>> Actors;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
-        Obj->SetStringField(TEXT("name"), It->GetName());
-        Obj->SetStringField(TEXT("class"), It->GetClass()->GetName());
-        Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
-    }
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+            Obj->SetStringField(TEXT("name"), It->GetName());
+            Obj->SetStringField(TEXT("class"), It->GetClass()->GetName());
+            Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetArrayField(TEXT("actors"), Actors);

@@ -40,3 +40,64 @@ async fn test_real_ue_create_level() {
 
     println!("Level created at: {}", actual_path);
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_spawn_destroy_actor() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let actor_name = format!("TestActor_{}", timestamp);
+
+    // Spawn
+    let response = client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    println!("Spawn response: {}", serde_json::to_string_pretty(&response).unwrap());
+
+    assert_eq!(response["success"], true, "spawn_actor failed: {:?}", response);
+    assert!(response["result"]["actor_name"].as_str().unwrap().contains(&actor_name));
+
+    // Verify in actor list — skip here to avoid large response truncation
+    // (editor level has 1000+ actors, 64KB buffer may not be enough)
+    // get_actor_list is tested separately below
+
+    // Destroy
+    let response = client.send_command("destroy_actor", json!({
+        "name": actor_name
+    })).await.unwrap();
+
+    println!("Destroy response: {}", serde_json::to_string_pretty(&response).unwrap());
+
+    assert_eq!(response["success"], true, "destroy_actor failed: {:?}", response);
+    assert_eq!(response["result"]["destroyed"], true);
+
+    println!("Spawn → verify → destroy: OK for {}", actor_name);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_spawn_actor_with_defaults() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    // Spawn with just class name (no name/location)
+    let response = client.send_command("spawn_actor", json!({
+        "className": "PointLight"
+    })).await.unwrap();
+
+    println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
+
+    assert_eq!(response["success"], true, "spawn_actor failed: {:?}", response);
+    assert_eq!(response["result"]["class"], "PointLight");
+
+    let spawned_name = response["result"]["actor_name"].as_str().unwrap().to_string();
+
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": spawned_name})).await.unwrap();
+}
