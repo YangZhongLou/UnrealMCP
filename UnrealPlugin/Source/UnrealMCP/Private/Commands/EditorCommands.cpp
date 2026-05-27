@@ -536,44 +536,48 @@ FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params)
 {
     FString ActorName = Params->GetStringField(TEXT("actorName"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-
-    AActor* Actor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        if (It->GetName() == ActorName)
-        {
-            Actor = *It;
-            break;
-        }
-    }
-
-    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-
-    ULightComponent* LightComp = Actor->FindComponentByClass<ULightComponent>();
-    if (!LightComp) return TEXT("{\"success\":false,\"error\":\"No light component found on actor\"}");
-
-    if (Params->HasField(TEXT("intensity")))
-    {
-        LightComp->SetIntensity(Params->GetNumberField(TEXT("intensity")));
-    }
+    // Pre-extract params outside GameThread
+    double bHasIntensity = Params->HasField(TEXT("intensity"));
+    double Intensity = bHasIntensity ? Params->GetNumberField(TEXT("intensity")) : 0;
+    bool bHasCastShadows = Params->HasField(TEXT("castShadows"));
+    bool bCastShadows = bHasCastShadows ? Params->GetBoolField(TEXT("castShadows")) : false;
+    FColor LightColor(FColor::White);
     if (Params->HasField(TEXT("color")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("color"));
         if (Arr.Num() >= 3)
-        {
-            FColor Color(
-                FMath::RoundToInt(Arr[0]->AsNumber() * 255),
-                FMath::RoundToInt(Arr[1]->AsNumber() * 255),
-                FMath::RoundToInt(Arr[2]->AsNumber() * 255));
-            LightComp->SetLightColor(Color, true);
-        }
+            LightColor = FColor(FMath::RoundToInt(Arr[0]->AsNumber() * 255), FMath::RoundToInt(Arr[1]->AsNumber() * 255), FMath::RoundToInt(Arr[2]->AsNumber() * 255));
     }
-    if (Params->HasField(TEXT("castShadows")))
+
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        LightComp->SetCastShadows(Params->GetBoolField(TEXT("castShadows")));
-    }
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName) { Actor = *It; break; }
+        }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+
+        ULightComponent* LightComp = Actor->FindComponentByClass<ULightComponent>();
+        if (!LightComp) { ErrorMsg = TEXT("No light component found on actor"); DoneEvent->Trigger(); return; }
+
+        if (bHasIntensity) LightComp->SetIntensity(Intensity);
+        LightComp->SetLightColor(LightColor, true);
+        if (bHasCastShadows) LightComp->SetCastShadows(bCastShadows);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\"}}"), *ActorName);
 }

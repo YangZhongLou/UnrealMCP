@@ -478,3 +478,73 @@ async fn test_real_ue_simulate_key() {
         "action": "release"
     })).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_add_remove_component() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestCompAdd_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 0.0]
+    })).await.unwrap();
+
+    // Add a PointLightComponent
+    let r = client.send_command("add_component", json!({
+        "actorName": actor_name,
+        "componentClass": "PointLightComponent"
+    })).await.unwrap();
+    println!("AddComp: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "add_component failed: {:?}", r);
+
+    let comp_name = r["result"]["component_name"].as_str().unwrap().to_string();
+
+    // Verify via get_actor_components
+    let r = client.send_command("get_actor_components", json!({
+        "actorName": actor_name
+    })).await.unwrap();
+    println!("Comps: count={}", r["result"]["count"]);
+
+    // Remove the component
+    let r = client.send_command("remove_component", json!({
+        "actorName": actor_name,
+        "componentName": comp_name
+    })).await.unwrap();
+    println!("RemoveComp: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "remove_component failed: {:?}", r);
+    assert_eq!(r["result"]["removed"], true);
+
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_set_light_parameters() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestLight_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "PointLight",
+        "name": actor_name,
+        "location": [0.0, 0.0, 200.0]
+    })).await.unwrap();
+
+    let r = client.send_command("set_light_parameters", json!({
+        "actorName": actor_name,
+        "intensity": 8000.0,
+        "color": [1.0, 0.0, 0.0],
+        "castShadows": false
+    })).await.unwrap();
+    println!("Light: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "set_light_parameters failed: {:?}", r);
+
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}

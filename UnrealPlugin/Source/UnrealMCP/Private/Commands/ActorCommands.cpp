@@ -467,59 +467,51 @@ FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params)
     FString ActorName = Params->GetStringField(TEXT("actorName"));
     FString MeshPath = Params->GetStringField(TEXT("meshPath"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
-
-    AActor* TargetActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        if (It->GetName() == ActorName)
-        {
-            TargetActor = *It;
-            break;
-        }
-    }
-
-    if (!TargetActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
-
     UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, *MeshPath);
     if (!StaticMesh)
-    {
         return FString::Printf(TEXT("{\"success\":false,\"error\":\"Mesh not found: %s\"}"), *MeshPath);
-    }
 
-    UStaticMeshComponent* MeshComp = nullptr;
-    if (Params->HasField(TEXT("componentName")))
+    FString CompName = Params->HasField(TEXT("componentName")) ? Params->GetStringField(TEXT("componentName")) : TEXT("");
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        FString CompName = Params->GetStringField(TEXT("componentName"));
-        TSet<UActorComponent*> Components = TargetActor->GetComponents();
-        for (UActorComponent* Comp : Components)
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* TargetActor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            if (Comp->GetName() == CompName)
+            if (It->GetName() == ActorName) { TargetActor = *It; break; }
+        }
+        if (!TargetActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+
+        UStaticMeshComponent* MeshComp = nullptr;
+        if (!CompName.IsEmpty())
+        {
+            TSet<UActorComponent*> Components = TargetActor->GetComponents();
+            for (UActorComponent* Comp : Components)
             {
-                MeshComp = Cast<UStaticMeshComponent>(Comp);
-                break;
+                if (Comp->GetName() == CompName) { MeshComp = Cast<UStaticMeshComponent>(Comp); break; }
             }
         }
-    }
-    else
-    {
-        MeshComp = TargetActor->FindComponentByClass<UStaticMeshComponent>();
-    }
+        else
+        {
+            MeshComp = TargetActor->FindComponentByClass<UStaticMeshComponent>();
+        }
+        if (!MeshComp) { ErrorMsg = TEXT("No StaticMeshComponent found on actor"); DoneEvent->Trigger(); return; }
 
-    if (!MeshComp)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No StaticMeshComponent found on actor\"}");
-    }
+        MeshComp->SetStaticMesh(StaticMesh);
+        TargetActor->MarkPackageDirty();
+        DoneEvent->Trigger();
+    });
 
-    MeshComp->SetStaticMesh(StaticMesh);
-    TargetActor->MarkPackageDirty();
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"mesh\":\"%s\"}}"), *ActorName, *MeshPath);
 }
@@ -686,49 +678,52 @@ FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params)
     FActorSpawnParameters SpawnParams;
     SpawnParams.bNoFail = true;
 
-    AActor* EffectActor = World->SpawnActor<AActor>(AActor::StaticClass(), Location, Rotation, SpawnParams);
-    if (!EffectActor)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to spawn effect container\"}");
-    }
-
-    UParticleSystemComponent* PSC = nullptr;
-    if (UParticleSystem* PSTemplate = Cast<UParticleSystem>(EffectAsset))
-    {
-        PSC = UGameplayStatics::SpawnEmitterAtLocation(
-            World, PSTemplate, Location, Rotation, FVector(1.0f), bAutoDestroy);
-    }
-    else
-    {
-        // Try Niagara
-        PSC = NewObject<UParticleSystemComponent>(EffectActor);
-        if (PSC)
-        {
-            PSC->RegisterComponent();
-            PSC->SetWorldLocation(Location);
-            PSC->SetWorldRotation(Rotation);
-        }
-    }
-
-    if (!PSC)
-    {
-        EffectActor->Destroy();
-        return TEXT("{\"success\":false,\"error\":\"Could not create particle system\"}");
-    }
-
-    PSC->AttachToComponent(EffectActor->GetRootComponent(),
-        FAttachmentTransformRules::KeepWorldTransform);
-
-    // Ensure the container doesn't interfere
-    EffectActor->SetActorHiddenInGame(true);
-
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("name"), PSC->GetName());
-    Result->SetStringField(TEXT("asset"), AssetPath);
-
+    AActor* EffectActor = nullptr;
     FString ResultStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
-    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        EffectActor = World->SpawnActor<AActor>(AActor::StaticClass(), Location, Rotation, SpawnParams);
+        if (!EffectActor) { ErrorMsg = TEXT("Failed to spawn effect container"); DoneEvent->Trigger(); return; }
+
+        UParticleSystemComponent* PSC = nullptr;
+        if (UParticleSystem* PSTemplate = Cast<UParticleSystem>(EffectAsset))
+        {
+            PSC = UGameplayStatics::SpawnEmitterAtLocation(
+                World, PSTemplate, Location, Rotation, FVector(1.0f), bAutoDestroy);
+        }
+        else
+        {
+            PSC = NewObject<UParticleSystemComponent>(EffectActor);
+            if (PSC)
+            {
+                PSC->RegisterComponent();
+                PSC->SetWorldLocation(Location);
+                PSC->SetWorldRotation(Rotation);
+            }
+        }
+
+        if (!PSC) { EffectActor->Destroy(); ErrorMsg = TEXT("Could not create particle system"); DoneEvent->Trigger(); return; }
+
+        PSC->AttachToComponent(EffectActor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+        EffectActor->SetActorHiddenInGame(true);
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("name"), PSC->GetName());
+        Result->SetStringField(TEXT("asset"), AssetPath);
+
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
