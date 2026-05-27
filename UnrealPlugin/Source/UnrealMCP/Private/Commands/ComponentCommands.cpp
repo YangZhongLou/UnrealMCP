@@ -7,41 +7,44 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Async/Async.h"
 
 FString HandleGetActorComponents(const TSharedPtr<FJsonObject>& Params)
 {
     FString ActorName = Params->GetStringField(TEXT("actorName"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
-
-    AActor* TargetActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        if (It->GetName() == ActorName)
-        {
-            TargetActor = *It;
-            break;
-        }
-    }
-
-    if (!TargetActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
-
     TArray<TSharedPtr<FJsonValue>> Components;
-    TSet<UActorComponent*> ComponentSet = TargetActor->GetComponents();
-    for (UActorComponent* Comp : ComponentSet)
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
-        Obj->SetStringField(TEXT("name"), Comp->GetName());
-        Obj->SetStringField(TEXT("class"), Comp->GetClass()->GetName());
-        Components.Add(MakeShareable(new FJsonValueObject(Obj)));
-    }
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* TargetActor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName) { TargetActor = *It; break; }
+        }
+        if (!TargetActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+
+        TSet<UActorComponent*> ComponentSet = TargetActor->GetComponents();
+        for (UActorComponent* Comp : ComponentSet)
+        {
+            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+            Obj->SetStringField(TEXT("name"), Comp->GetName());
+            Obj->SetStringField(TEXT("class"), Comp->GetClass()->GetName());
+            Components.Add(MakeShareable(new FJsonValueObject(Obj)));
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetArrayField(TEXT("components"), Components);
@@ -65,63 +68,59 @@ FString HandleAddComponent(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("componentName"))
         : TEXT("");
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
+    FString ResultStr;
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    AActor* TargetActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (It->GetName() == ActorName)
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* TargetActor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            TargetActor = *It;
-            break;
+            if (It->GetName() == ActorName) { TargetActor = *It; break; }
         }
-    }
+        if (!TargetActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    if (!TargetActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
+        UClass* CompClass = FindFirstObject<UClass>(*ComponentClass);
+        if (!CompClass)
+        {
+            FString FullName = FString::Printf(TEXT("U%s"), *ComponentClass);
+            CompClass = FindFirstObject<UClass>(*FullName);
+        }
+        if (!CompClass || !CompClass->IsChildOf(UActorComponent::StaticClass()))
+        { ErrorMsg = FString::Printf(TEXT("Component class not found: %s"), *ComponentClass); DoneEvent->Trigger(); return; }
 
-    UClass* CompClass = FindObject<UClass>(nullptr, *ComponentClass);
-    if (!CompClass)
-    {
-        // Try with UActorComponent prefix
-        FString FullName = FString::Printf(TEXT("U%s"), *ComponentClass);
-        CompClass = FindObject<UClass>(nullptr, *FullName);
-    }
-    if (!CompClass || !CompClass->IsChildOf(UActorComponent::StaticClass()))
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Component class not found: %s\"}"), *ComponentClass);
-    }
+        FName NewName = ComponentName.IsEmpty() ? NAME_None : FName(*ComponentName);
+        UActorComponent* NewComp = NewObject<UActorComponent>(TargetActor, CompClass, NewName, RF_Transactional);
+        if (!NewComp) { ErrorMsg = TEXT("Failed to create component"); DoneEvent->Trigger(); return; }
 
-    FName NewName = ComponentName.IsEmpty() ? NAME_None : FName(*ComponentName);
-    UActorComponent* NewComp = NewObject<UActorComponent>(TargetActor, CompClass, NewName, RF_Transactional);
-    if (!NewComp)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to create component\"}");
-    }
+        TargetActor->AddInstanceComponent(NewComp);
+        NewComp->RegisterComponent();
+        TargetActor->RerunConstructionScripts();
 
-    TargetActor->AddInstanceComponent(NewComp);
-    NewComp->RegisterComponent();
-    TargetActor->RerunConstructionScripts();
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("component_name"), NewComp->GetName());
+        Result->SetStringField(TEXT("component_class"), NewComp->GetClass()->GetName());
+        Result->SetStringField(TEXT("actor"), ActorName);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("component_name"), NewComp->GetName());
-    Result->SetStringField(TEXT("component_class"), NewComp->GetClass()->GetName());
-    Result->SetStringField(TEXT("actor"), ActorName);
+        TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+        Response->SetBoolField(TEXT("success"), true);
+        Response->SetObjectField(TEXT("result"), Result);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+        DoneEvent->Trigger();
+    });
 
-    FString Out;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
-    return Out;
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+    return ResultStr;
 }
 
 FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params)
@@ -129,45 +128,39 @@ FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params)
     FString ActorName = Params->GetStringField(TEXT("actorName"));
     FString ComponentName = Params->GetStringField(TEXT("componentName"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    AActor* TargetActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (It->GetName() == ActorName)
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* TargetActor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            TargetActor = *It;
-            break;
+            if (It->GetName() == ActorName) { TargetActor = *It; break; }
         }
-    }
+        if (!TargetActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    if (!TargetActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
-
-    TSet<UActorComponent*> ComponentSet = TargetActor->GetComponents();
-    UActorComponent* TargetComp = nullptr;
-    for (UActorComponent* Comp : ComponentSet)
-    {
-        if (Comp->GetName() == ComponentName)
+        TSet<UActorComponent*> ComponentSet = TargetActor->GetComponents();
+        UActorComponent* TargetComp = nullptr;
+        for (UActorComponent* Comp : ComponentSet)
         {
-            TargetComp = Comp;
-            break;
+            if (Comp->GetName() == ComponentName) { TargetComp = Comp; break; }
         }
-    }
+        if (!TargetComp) { ErrorMsg = FString::Printf(TEXT("Component not found: %s"), *ComponentName); DoneEvent->Trigger(); return; }
 
-    if (!TargetComp)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Component not found: %s\"}"), *ComponentName);
-    }
+        TargetComp->DestroyComponent();
+        TargetActor->RerunConstructionScripts();
+        DoneEvent->Trigger();
+    });
 
-    TargetComp->DestroyComponent();
-    TargetActor->RerunConstructionScripts();
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"removed\":true,\"component\":\"%s\"}}"), *ComponentName);
 }

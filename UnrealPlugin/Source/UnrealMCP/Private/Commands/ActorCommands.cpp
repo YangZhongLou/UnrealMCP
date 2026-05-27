@@ -246,41 +246,39 @@ FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params)
     FString Name = Params->GetStringField(TEXT("name"));
     FString NewName = Params->GetStringField(TEXT("newName"));
 
-    AActor* SourceActor = nullptr;
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (World)
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* SourceActor = nullptr;
         for (TActorIterator<AActor> It(World); It; ++It)
         {
-            if (It->GetName() == Name)
-            {
-                SourceActor = *It;
-                break;
-            }
+            if (It->GetName() == Name) { SourceActor = *It; break; }
         }
-    }
+        if (!SourceActor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *Name); DoneEvent->Trigger(); return; }
 
-    if (!SourceActor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *Name);
-    }
+        FVector Location = SourceActor->GetActorLocation() + FVector(100, 0, 0);
+        FActorSpawnParameters SpawnParams;
+        if (!NewName.IsEmpty()) SpawnParams.Name = FName(*NewName);
 
-    FVector Location = SourceActor->GetActorLocation() + FVector(100, 0, 0);
-    FActorSpawnParameters SpawnParams;
-    if (!NewName.IsEmpty())
-    {
-        SpawnParams.Name = FName(*NewName);
-    }
+        AActor* DuplicatedActor = World->SpawnActor<AActor>(SourceActor->GetClass(), Location, SourceActor->GetActorRotation(), SpawnParams);
+        if (!DuplicatedActor) { ErrorMsg = TEXT("Failed to duplicate actor"); DoneEvent->Trigger(); return; }
 
-    AActor* DuplicatedActor = World->SpawnActor<AActor>(SourceActor->GetClass(), Location, SourceActor->GetActorRotation(), SpawnParams);
-    if (!DuplicatedActor)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to duplicate actor\"}");
-    }
+        Result->SetStringField(TEXT("actor_name"), DuplicatedActor->GetName());
+        Result->SetStringField(TEXT("source"), Name);
+        DoneEvent->Trigger();
+    });
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("actor_name"), DuplicatedActor->GetName());
-    Result->SetStringField(TEXT("source"), Name);
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
     Response->SetBoolField(TEXT("success"), true);
@@ -309,36 +307,44 @@ FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params)
 {
     FString Name = Params->GetStringField(TEXT("name"));
 
-    AActor** Found = SpawnedActors.Find(Name);
-    if (!Found)
+    bool bDestroyed = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-        if (World)
+        AActor** Found = SpawnedActors.Find(Name);
+        if (!Found)
         {
-            for (TActorIterator<AActor> It(World); It; ++It)
+            UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+            if (World)
             {
-                AActor* Actor = *It;
-                if (Actor->GetName() == Name)
+                for (TActorIterator<AActor> It(World); It; ++It)
                 {
-                    SpawnedActors.Add(Name, Actor);
-                    Found = SpawnedActors.Find(Name);
-                    break;
+                    AActor* Actor = *It;
+                    if (Actor->GetName() == Name)
+                    {
+                        SpawnedActors.Add(Name, Actor);
+                        Found = SpawnedActors.Find(Name);
+                        break;
+                    }
                 }
             }
         }
-    }
 
-    if (Found && *Found)
-    {
-        FEvent* DestroyDone = FPlatformProcess::GetSynchEventFromPool();
-        AsyncTask(ENamedThreads::GameThread, [Found, DestroyDone]()
+        if (Found && *Found)
         {
             (*Found)->Destroy();
-            DestroyDone->Trigger();
-        });
-        DestroyDone->Wait();
-        FPlatformProcess::ReturnSynchEventToPool(DestroyDone);
+            bDestroyed = true;
+        }
 
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (bDestroyed)
+    {
         SpawnedActors.Remove(Name);
         return TEXT("{\"success\":true,\"result\":{\"destroyed\":true}}");
     }
@@ -525,34 +531,40 @@ FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetBoolField(TEXT("exactMatch"))
         : false;
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-    }
-
     TArray<TSharedPtr<FJsonValue>> Actors;
-    for (TActorIterator<AActor> It(World); It; ++It)
-    {
-        FString ActorClassName = It->GetClass()->GetName();
-        bool bMatches = bExactMatch
-            ? ActorClassName.Equals(ClassName, ESearchCase::IgnoreCase)
-            : ActorClassName.Contains(ClassName, ESearchCase::IgnoreCase);
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-        if (bMatches)
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { DoneEvent->Trigger(); return; }
+
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
-            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
-            Obj->SetStringField(TEXT("name"), It->GetName());
-            Obj->SetStringField(TEXT("class"), ActorClassName);
-            FVector Loc = It->GetActorLocation();
-            TArray<TSharedPtr<FJsonValue>> LocArr;
-            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
-            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
-            LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
-            Obj->SetArrayField(TEXT("location"), LocArr);
-            Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
+            FString ActorClassName = It->GetClass()->GetName();
+            bool bMatches = bExactMatch
+                ? ActorClassName.Equals(ClassName, ESearchCase::IgnoreCase)
+                : ActorClassName.Contains(ClassName, ESearchCase::IgnoreCase);
+
+            if (bMatches)
+            {
+                TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+                Obj->SetStringField(TEXT("name"), It->GetName());
+                Obj->SetStringField(TEXT("class"), ActorClassName);
+                FVector Loc = It->GetActorLocation();
+                TArray<TSharedPtr<FJsonValue>> LocArr;
+                LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
+                LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
+                LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
+                Obj->SetArrayField(TEXT("location"), LocArr);
+                Actors.Add(MakeShareable(new FJsonValueObject(Obj)));
+            }
         }
-    }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetArrayField(TEXT("actors"), Actors);

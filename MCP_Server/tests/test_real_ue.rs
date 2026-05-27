@@ -213,3 +213,73 @@ async fn test_real_ue_save_current_level() {
     assert_eq!(r["success"], true, "save_current_level failed: {:?}", r);
     assert_eq!(r["result"]["saved"], true);
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_actor_components() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestComp_{}", timestamp);
+
+    // Spawn a light (has multiple components)
+    client.send_command("spawn_actor", json!({
+        "className": "PointLight",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    let r = client.send_command("get_actor_components", json!({
+        "actorName": actor_name
+    })).await.unwrap();
+    println!("Components: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_actor_components failed: {:?}", r);
+    assert!(r["result"]["count"].as_u64().unwrap() > 0, "Should have components");
+
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_duplicate_actor() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let source_name = format!("TestDupSrc_{}", timestamp);
+    let dup_name = format!("TestDupDst_{}", timestamp);
+
+    // Spawn
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": source_name,
+        "location": [0.0, 0.0, 0.0]
+    })).await.unwrap();
+
+    // Duplicate
+    let r = client.send_command("duplicate_actor", json!({
+        "name": source_name,
+        "newName": dup_name
+    })).await.unwrap();
+    println!("Duplicate: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "duplicate_actor failed: {:?}", r);
+    assert_eq!(r["result"]["source"], source_name);
+
+    // Cleanup both
+    client.send_command("destroy_actor", json!({"name": source_name})).await.unwrap();
+    client.send_command("destroy_actor", json!({"name": dup_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_find_actors_by_class() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("find_actors_by_class", json!({
+        "className": "StaticMesh"
+    })).await.unwrap();
+    println!("Find: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "find_actors_by_class failed: {:?}", r);
+    // Note: count may be 0 if no StaticMeshActors in level
+}
