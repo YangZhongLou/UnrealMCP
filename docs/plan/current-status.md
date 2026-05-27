@@ -5,7 +5,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| **当前 Phase** | Phase 18 — 蓝图函数图操作 ✅ |
+| **当前 Phase** | Phase 19 — API 文档 ✅ |
 | **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |
 
@@ -14,6 +14,20 @@
 等待规划下一个 Phase。
 
 ## 当前 Phase 进度
+
+- [x] Phase 19 — API 文档
+  - [x] Plan → 明确范围
+  - [x] Review → 审查可行性
+  - [x] Work → 确定文档结构
+  - [x] Plan → 文档模板设计
+  - [x] Review → 审查模板
+  - [x] Work → 编写文档
+  - [x] Plan → 确认需更新文档
+  - [x] Review → 审查文档范围
+  - [x] Work → 更新文档
+  - [x] Plan → 确认变更文件
+  - [x] Review → 审查 diff
+  - [x] Work → stage + commit + push
 
 - [x] Phase 18 — 蓝图函数图操作
   - [x] Plan → 明确目标、NOT-in-scope
@@ -58,7 +72,7 @@
 ## 下一步
 
 1. 性能/压力测试 (P1) — 大场景操作响应时间、并发连接、内存泄漏测试
-2. API 文档 (P1) — 所有 Tools 的详细说明文档
+2. monolith 重构 (P2) — 拆分 server.rs 为模块化 tool 文件
 
 ## 阻塞项
 

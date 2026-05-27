@@ -152,6 +152,10 @@ UnrealMCP/
 |------|------|
 | `check_unreal_connection` | 检查连接状态 |
 
+## API 文档
+
+详见 [docs/api-reference.md](docs/api-reference.md) — 57 个工具的完整参数说明。
+
 ## 安装使用
 
 ### 1. 构建 MCP Server (Rust)
