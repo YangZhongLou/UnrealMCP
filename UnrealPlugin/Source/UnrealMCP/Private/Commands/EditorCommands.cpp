@@ -13,6 +13,7 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/Engine.h"
+#include "LogCaptureDevice.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -483,6 +484,50 @@ FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params)
     }
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"view_mode\":\"%s\"}}"), *Mode);
+}
+
+FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params)
+{
+    int32 Count = Params->HasField(TEXT("count"))
+        ? FMath::Clamp(FMath::RoundToInt(Params->GetNumberField(TEXT("count"))), 1, 1000)
+        : 100;
+
+    FString MinVerbosity = Params->HasField(TEXT("verbosity"))
+        ? Params->GetStringField(TEXT("verbosity"))
+        : TEXT("Log");
+
+    bool bClearAfter = Params->HasField(TEXT("clearAfter"))
+        ? Params->GetBoolField(TEXT("clearAfter"))
+        : false;
+
+    TArray<FLogEntry> Logs;
+    FLogCaptureDevice::Get().GetLogs(Count, MinVerbosity, Logs, bClearAfter);
+
+    TArray<TSharedPtr<FJsonValue>> LogArray;
+    for (const FLogEntry& Entry : Logs)
+    {
+        TSharedPtr<FJsonObject> LogObj = MakeShareable(new FJsonObject);
+        LogObj->SetStringField(TEXT("timestamp"), Entry.Timestamp.ToString());
+        LogObj->SetStringField(TEXT("category"), Entry.Category);
+        LogObj->SetStringField(TEXT("verbosity"),
+            Entry.Verbosity == ELogVerbosity::Error ? TEXT("Error") :
+            Entry.Verbosity == ELogVerbosity::Warning ? TEXT("Warning") :
+            Entry.Verbosity == ELogVerbosity::Log ? TEXT("Log") :
+            Entry.Verbosity == ELogVerbosity::Verbose ? TEXT("Verbose") : TEXT("VeryVerbose"));
+        LogObj->SetStringField(TEXT("message"), Entry.Message);
+        LogArray.Add(MakeShareable(new FJsonValueObject(LogObj)));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetNumberField(TEXT("count"), LogArray.Num());
+    Result->SetArrayField(TEXT("logs"), LogArray);
+    Result->SetNumberField(TEXT("bufferSize"), FLogCaptureDevice::Get().GetBufferSize());
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
 
 FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params)

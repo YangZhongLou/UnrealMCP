@@ -54,6 +54,7 @@ FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
 FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
 FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params);
 FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -427,6 +428,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("export_asset"))
     {
         ResultStr = HandleExportAsset(Params);
+    }
+    else if (Method == TEXT("get_ue_logs"))
+    {
+        ResultStr = HandleGetLogs(Params);
     }
     else
     {

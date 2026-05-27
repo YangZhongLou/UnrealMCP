@@ -1,5 +1,6 @@
 #include "UnrealMCP.h"
 #include "MCPCommandServer.h"
+#include "LogCaptureDevice.h"
 
 DEFINE_LOG_CATEGORY(LogUnrealMCP);
 
@@ -18,11 +19,15 @@ void FUnrealMCPModule::StartupModule()
     {
         UE_LOG(LogUnrealMCP, Error, TEXT("Failed to start MCP Command Server"));
     }
+
+    FLogCaptureDevice::Get().Start();
 }
 
 void FUnrealMCPModule::ShutdownModule()
 {
     UE_LOG(LogUnrealMCP, Log, TEXT("UnrealMCP module shutting down..."));
+
+    FLogCaptureDevice::Get().Stop();
 
     if (CommandServer)
     {

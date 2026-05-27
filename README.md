@@ -49,7 +49,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (50 个工具)
+## 已实现功能 (51 个工具)
 
 ### Actor 操作 (9)
 | Tool | 描述 |
@@ -64,7 +64,7 @@ UnrealMCP/
 | `find_actors_by_class` | 按类名搜索 Actor |
 | `spawn_blueprint_actor` | 从 Blueprint 资产生成 Actor |
 
-### 编辑器操作 (10)
+### 编辑器操作 (11)
 | Tool | 描述 |
 |------|------|
 | `get_editor_info` | 获取编辑器/引擎信息 |
@@ -77,6 +77,7 @@ UnrealMCP/
 | `get_current_level` | 获取当前关卡信息 |
 | `get_selected_actors` | 获取当前选中的 Actor |
 | `select_actor` | 选中指定 Actor |
+| `get_ue_logs` | 获取 UE 编辑器输出日志 |
 
 ### 蓝图操作 (8)
 | Tool | 描述 |

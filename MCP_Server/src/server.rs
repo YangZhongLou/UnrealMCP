@@ -1326,6 +1326,40 @@ impl UnrealMcpServer {
         }
     }
 
+    #[tool(description = "Get recent Unreal Editor output log messages")]
+    async fn get_ue_logs(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Maximum number of log entries to return, default 100, max 1000")]
+        count: Option<i32>,
+        #[tool(param)]
+        #[schemars(description = "Minimum verbosity filter: 'Error', 'Warning', 'Log', 'Verbose', 'VeryVerbose', default 'Log'")]
+        verbosity: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "If true, clear the buffer after reading")]
+        clear_after: Option<bool>,
+    ) -> String {
+        let mut params = json!({});
+        if let Some(c) = count { params["count"] = json!(c); }
+        if let Some(v) = verbosity { params["verbosity"] = json!(v); }
+        if let Some(ca) = clear_after { params["clearAfter"] = json!(ca); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("get_ue_logs", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    let result = &response["result"];
+                    let count = result["count"].as_i64().unwrap_or(0);
+                    let logs = &result["logs"];
+                    format!("{} log entries: {}", count, logs)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
     #[tool(description = "Export an asset to a file on disk")]
     async fn export_asset(
         &self,
