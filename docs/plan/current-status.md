@@ -5,13 +5,18 @@
 
 | 字段 | 值 |
 |------|-----|
-| **当前 Phase** | Phase 20 — 性能测试 ✅ |
+| **当前 Phase** | Phase 21 — Monolith 重构 ✅ |
 | **工作流步骤** | 6/6 — Commit |
 | **分支** | `feature/unreal-mcp-init` |
 
 ## 当前任务
 
-等待规划下一个 Phase。
+所有里程碑任务已完成。
+
+## 已完成 Phase 21: Monolith 重构
+
+server.rs: 1565 → 497 行 (68% 缩减)。添加 `call()` helper 消除重复 send/match 模式。
+所有 14 测试通过。
 
 ## 已完成 Phase 20: 性能/压力测试
 
@@ -75,7 +80,7 @@
 
 ## 下一步
 
-1. monolith 重构 (P2) — 拆分 server.rs 为模块化 tool 文件
+（所有待定功能已完成）
 
 ## 阻塞项
 
