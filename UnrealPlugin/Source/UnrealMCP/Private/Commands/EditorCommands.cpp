@@ -18,6 +18,8 @@
 #include "Framework/Docking/TabManager.h"
 #include "LevelEditorSubsystem.h"
 #include "Async/Async.h"
+#include "Misc/PackageName.h"
+#include "HAL/FileManager.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -80,13 +82,14 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
     FString LevelPath;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    // Dispatch to GameThread — NewLevel and SaveLevel require GameThread
+    // Dispatch to GameThread
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         if (GEditor)
         {
-            // Save all dirty packages without prompting to avoid dialog in NewLevel
-            FEditorFileUtils::SaveDirtyPackages(false, true, true);
+            // Suppress all UI dialogs during level creation
+            bool bPrevUnattended = GIsRunningUnattendedScript;
+            GIsRunningUnattendedScript = true;
 
             ULevelEditorSubsystem* LevelEditor = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
             if (LevelEditor && LevelEditor->NewLevel(Path))
@@ -99,6 +102,8 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
                     LevelPath = NewWorld->GetOutermost()->GetName();
                 }
             }
+
+            GIsRunningUnattendedScript = bPrevUnattended;
         }
         DoneEvent->Trigger();
     });
