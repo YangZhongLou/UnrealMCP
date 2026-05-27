@@ -120,65 +120,57 @@ FString HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params)
 {
     FString ActorName = Params->GetStringField(TEXT("actorName"));
     FString PropertyName = Params->GetStringField(TEXT("propertyName"));
+    TSharedPtr<FJsonObject> ValueObj = Params->GetObjectField(TEXT("value"));
 
-    AActor* Actor = nullptr;
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (World)
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        for (TActorIterator<AActor> It(World); It; ++It)
+        AActor* Actor = nullptr;
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (World)
         {
-            if (It->GetName() == ActorName)
+            for (TActorIterator<AActor> It(World); It; ++It)
             {
-                Actor = *It;
-                break;
+                if (It->GetName() == ActorName) { Actor = *It; break; }
             }
         }
-    }
 
-    if (!Actor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
-    if (!Property)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Property not found: %s\"}"), *PropertyName);
-    }
+        FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
+        if (!Property) { ErrorMsg = FString::Printf(TEXT("Property not found: %s"), *PropertyName); DoneEvent->Trigger(); return; }
 
-    TSharedPtr<FJsonObject> ValueObj = Params->GetObjectField(TEXT("value"));
-    if (ValueObj->HasField(TEXT("FloatValue")))
-    {
-        float FloatValue = ValueObj->GetNumberField(TEXT("FloatValue"));
-        if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        if (ValueObj->HasField(TEXT("FloatValue")))
         {
-            FloatProp->SetPropertyValue_InContainer(Actor, FloatValue);
+            if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+                FloatProp->SetPropertyValue_InContainer(Actor, ValueObj->GetNumberField(TEXT("FloatValue")));
         }
-    }
-    else if (ValueObj->HasField(TEXT("IntValue")))
-    {
-        int32 IntValue = ValueObj->GetIntegerField(TEXT("IntValue"));
-        if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        else if (ValueObj->HasField(TEXT("IntValue")))
         {
-            IntProp->SetPropertyValue_InContainer(Actor, IntValue);
+            if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+                IntProp->SetPropertyValue_InContainer(Actor, ValueObj->GetIntegerField(TEXT("IntValue")));
         }
-    }
-    else if (ValueObj->HasField(TEXT("StringValue")))
-    {
-        FString StringValue = ValueObj->GetStringField(TEXT("StringValue"));
-        if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        else if (ValueObj->HasField(TEXT("StringValue")))
         {
-            StrProp->SetPropertyValue_InContainer(Actor, StringValue);
+            if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+                StrProp->SetPropertyValue_InContainer(Actor, ValueObj->GetStringField(TEXT("StringValue")));
         }
-    }
-    else if (ValueObj->HasField(TEXT("BoolValue")))
-    {
-        bool BoolValue = ValueObj->GetBoolField(TEXT("BoolValue"));
-        if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        else if (ValueObj->HasField(TEXT("BoolValue")))
         {
-            BoolProp->SetPropertyValue_InContainer(Actor, BoolValue);
+            if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+                BoolProp->SetPropertyValue_InContainer(Actor, ValueObj->GetBoolField(TEXT("BoolValue")));
         }
-    }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return TEXT("{\"success\":true,\"result\":{\"set\":true}}");
 }
@@ -188,57 +180,56 @@ FString HandleGetActorProperty(const TSharedPtr<FJsonObject>& Params)
     FString ActorName = Params->GetStringField(TEXT("actorName"));
     FString PropertyName = Params->GetStringField(TEXT("propertyName"));
 
-    AActor* Actor = nullptr;
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (World)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        for (TActorIterator<AActor> It(World); It; ++It)
+        AActor* Actor = nullptr;
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (World)
         {
-            if (It->GetName() == ActorName)
+            for (TActorIterator<AActor> It(World); It; ++It)
             {
-                Actor = *It;
-                break;
+                if (It->GetName() == ActorName) { Actor = *It; break; }
             }
         }
-    }
 
-    if (!Actor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-    }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
-    if (!Property)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Property not found: %s\"}"), *PropertyName);
-    }
+        FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
+        if (!Property) { ErrorMsg = FString::Printf(TEXT("Property not found: %s"), *PropertyName); DoneEvent->Trigger(); return; }
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            Result->SetNumberField(TEXT("value"), FloatProp->GetPropertyValue_InContainer(Actor));
+        }
+        else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            Result->SetNumberField(TEXT("value"), (double)IntProp->GetPropertyValue_InContainer(Actor));
+        }
+        else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            Result->SetStringField(TEXT("value"), StrProp->GetPropertyValue_InContainer(Actor));
+        }
+        else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            Result->SetBoolField(TEXT("value"), BoolProp->GetPropertyValue_InContainer(Actor));
+        }
+        else
+        {
+            Result->SetStringField(TEXT("value"), TEXT("Unsupported property type"));
+        }
 
-    if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
-    {
-        float Value = FloatProp->GetPropertyValue_InContainer(Actor);
-        Result->SetNumberField(TEXT("value"), Value);
-    }
-    else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
-    {
-        int32 Value = IntProp->GetPropertyValue_InContainer(Actor);
-        Result->SetNumberField(TEXT("value"), Value);
-    }
-    else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
-    {
-        FString Value = StrProp->GetPropertyValue_InContainer(Actor);
-        Result->SetStringField(TEXT("value"), Value);
-    }
-    else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
-    {
-        bool Value = BoolProp->GetPropertyValue_InContainer(Actor);
-        Result->SetBoolField(TEXT("value"), Value);
-    }
-    else
-    {
-        Result->SetStringField(TEXT("value"), TEXT("Unsupported property type"));
-    }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
     Response->SetBoolField(TEXT("success"), true);
@@ -359,61 +350,68 @@ FString HandleSetActorTransform(const TSharedPtr<FJsonObject>& Params)
 {
     FString Name = Params->GetStringField(TEXT("name"));
 
-    AActor* Actor = nullptr;
-    AActor** Found = SpawnedActors.Find(Name);
-    if (Found)
-    {
-        Actor = *Found;
-    }
-    else
-    {
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-        if (World)
-        {
-            for (TActorIterator<AActor> It(World); It; ++It)
-            {
-                if (It->GetName() == Name)
-                {
-                    Actor = *It;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!Actor)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *Name);
-    }
+    // Copy out params before dispatching to GameThread
+    FVector Loc(0, 0, 0);
+    FRotator Rot(0, 0, 0);
+    FVector Scale(1, 1, 1);
+    bool bHasLoc = false, bHasRot = false, bHasScale = false;
 
     if (Params->HasField(TEXT("location")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
-        if (Arr.Num() >= 3)
-        {
-            FVector Loc(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
-            Actor->SetActorLocation(Loc);
-        }
+        if (Arr.Num() >= 3) { Loc = FVector(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber()); bHasLoc = true; }
     }
-
     if (Params->HasField(TEXT("rotation")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
-        if (Arr.Num() >= 3)
-        {
-            FRotator Rot(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
-            Actor->SetActorRotation(Rot);
-        }
+        if (Arr.Num() >= 3) { Rot = FRotator(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber()); bHasRot = true; }
     }
-
     if (Params->HasField(TEXT("scale")))
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("scale"));
-        if (Arr.Num() >= 3)
+        if (Arr.Num() >= 3) { Scale = FVector(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber()); bHasScale = true; }
+    }
+
+    bool bFound = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        AActor* Actor = nullptr;
+        AActor** Found = SpawnedActors.Find(Name);
+        if (Found)
         {
-            FVector Scale(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
-            Actor->SetActorScale3D(Scale);
+            Actor = *Found;
         }
+        else
+        {
+            UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+            if (World)
+            {
+                for (TActorIterator<AActor> It(World); It; ++It)
+                {
+                    if (It->GetName() == Name) { Actor = *It; break; }
+                }
+            }
+        }
+
+        if (Actor)
+        {
+            if (bHasLoc) { Actor->SetActorLocation(Loc); }
+            if (bHasRot) { Actor->SetActorRotation(Rot); }
+            if (bHasScale) { Actor->SetActorScale3D(Scale); }
+            bFound = true;
+        }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!bFound)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *Name);
     }
 
     return TEXT("{\"success\":true,\"result\":{\"updated\":true}}");

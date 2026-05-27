@@ -249,10 +249,19 @@ FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params)
     FString LevelPath = World->GetOutermost()->GetName();
 
     int32 ActorCount = 0;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ActorCount++;
-    }
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            ActorCount++;
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("name"), LevelName);
