@@ -49,7 +49,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (57 个工具)
+## 已实现功能 (58 个工具)
 
 ### Actor 操作 (9)
 | Tool | 描述 |
@@ -64,7 +64,7 @@ UnrealMCP/
 | `find_actors_by_class` | 按类名搜索 Actor |
 | `spawn_blueprint_actor` | 从 Blueprint 资产生成 Actor |
 
-### 编辑器操作 (11)
+### 编辑器操作 (15)
 | Tool | 描述 |
 | --- | --- |
 | `get_editor_info` | 获取编辑器/引擎信息 |
@@ -155,7 +155,7 @@ UnrealMCP/
 
 ## API 文档
 
-详见 [docs/api-reference.md](docs/api-reference.md) — 57 个工具的完整参数说明。
+详见 [docs/api-reference.md](docs/api-reference.md) — 58 个工具的完整参数说明。
 
 ## 安装使用
 

@@ -27,14 +27,16 @@
 | Phase 19 | v0.8 | API 文档 | 0 | ✅ 完成 |
 | Phase 20 | v0.9 | 性能/压力测试 | 0 (测试) | ✅ 完成 |
 | Phase 21 | v1.0 | Monolith 重构 | 0 (重构) | ✅ 完成 |
-| **累计** | | | **57** | |
+| Phase 22 | v1.0 | GameThread 修复 + UE 5.7 兼容性 | 0 (修复) | ✅ 完成 |
+| Phase 23 | v1.0 | 全量真实 UE 测试覆盖 (42 tests, 58/58 tools) | 0 (测试) | ✅ 完成 |
+| **累计** | | | **58** | |
 
 ## 工具分布
 
 | 类别 | 工具数 | 工具 |
 |------|--------|------|
 | Actor 操作 | 9 | spawn, destroy, duplicate, list, transform, property get/set, find by class, spawn blueprint |
-| 编辑器操作 | 14 | editor info, console command, save level, PIE start/stop, screenshot, focus viewport, current level, selected actors, select actor, get ue logs, **execute editor command**, **focus editor panel**, **get editor commands** |
+| 编辑器操作 | 15 | editor info, console command, save level, create level, PIE start/stop, screenshot, focus viewport, current level, selected actors, select actor, get ue logs, execute editor command, focus editor panel, get editor commands |
 | 蓝图操作 | 11 | create, compile, info, add node, connect, get graph, add/remove variable, **create/delete function graph**, **list graphs** |
 | 资产操作 | 6 | list, info, delete, rename, import, export |
 | 组件操作 | 3 | get components, add, remove |
@@ -63,7 +65,7 @@
 |------|------|------|
 | v0.5 | 当前 — 15 个 Phase 完成，50 个工具 | ✅ 完成 |
 | v0.6 | 实时日志推送 + UI 自动化 | TBD |
-| v1.0 | 全量测试 + 文档完善 + 正式发布 | ✅ 完成 (2026/05) |
+| v1.0 | 全量测试 + 文档完善 + 正式发布 | ✅ 完成 (2026/05) — 58 tools, 42 real UE tests, 100% 覆盖 |
 
 # 7. 开发规范
 
