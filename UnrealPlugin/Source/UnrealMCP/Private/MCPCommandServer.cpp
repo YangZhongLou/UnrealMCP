@@ -61,6 +61,7 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params);
 FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
 FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -266,6 +267,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("save_current_level"))
     {
         ResultStr = HandleSaveCurrentLevel(Params);
+    }
+    else if (Method == TEXT("create_level"))
+    {
+        ResultStr = HandleCreateLevel(Params);
     }
     else if (Method == TEXT("play_in_editor"))
     {

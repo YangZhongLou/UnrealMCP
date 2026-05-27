@@ -54,6 +54,44 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
     return TEXT("{\"success\":false,\"error\":\"Failed to save level\"}");
 }
 
+#include "EditorLevelLibrary.h"
+
+FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+
+    bool bCreated = false;
+    FString LevelPath;
+
+    if (GEditor)
+    {
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (World)
+        {
+            UEditorLevelLibrary::NewLevel(Path);
+            FEditorFileUtils::SaveLevel(World->GetCurrentLevel());
+            bCreated = true;
+            LevelPath = World->GetOutermost()->GetName();
+        }
+    }
+
+    if (bCreated)
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("path"), LevelPath);
+        Result->SetBoolField(TEXT("created"), true);
+
+        FString ResultStr;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        Writer->Close();
+
+        FString Out = FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+        return Out;
+    }
+    return TEXT("{\"success\":false,\"error\":\"Failed to create level\"}");
+}
+
 FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
     if (GEditor)

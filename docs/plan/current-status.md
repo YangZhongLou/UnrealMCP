@@ -5,13 +5,13 @@
 
 | 字段 | 值 |
 |------|-----|
-| **当前 Phase** | Phase 21 — Monolith 重构 ✅ |
-| **工作流步骤** | 6/6 — Commit |
+| **当前 Phase** | Phase 22 — 添加 create_level 工具 |
+| **工作流步骤** | 5/6 — Document |
 | **分支** | `feature/unreal-mcp-init` |
 
 ## 当前任务
 
-所有里程碑任务已完成。
+Phase 22: 添加 `create_level` 工具 — 创建新关卡。
 
 ## 已完成 Phase 21: Monolith 重构
 
@@ -88,6 +88,6 @@ server.rs: 1565 → 497 行 (68% 缩减)。添加 `call()` helper 消除重复 s
 
 ## 快速统计
 
-- 工具总数: 57
-- Phase 完成: 18
-- 最近构建: ✅ `cargo build` 通过
+- 工具总数: 58
+- Phase 完成: 21
+- 最近构建: ✅ `cargo build` 通过 ✅ `cargo test --test test_unreal_client` 全部 10 项通过

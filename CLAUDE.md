@@ -6,10 +6,10 @@
 任一子步骤发现计划不合理，打回该阶段的 Plan 重新计划。
 
 ```
-1.Plan → 2.Architect → 3.Implement → 4.Test → 5.Document → 6.Commit
-  ↑         │               │             │            │
-  └─────────┴───────────────┴─────────────┴────────────┘
-             任一阶段子步骤失败，打回该阶段 Plan
+1.Brainstorm → 2.Architect → 3.Implement → 4.Test → 5.Document → 6.Commit
+  ↑               │               │             │            │
+  └───────────────┴───────────────┴─────────────┴────────────┘
+                   任一阶段子步骤失败，打回该阶段 Plan
 ```
 
 每个阶段子步骤：
@@ -27,10 +27,10 @@
 
 | 阶段 | 技能 | Plan | Review | Work | Gate |
 |------|------|------|--------|------|------|
-| 1. Plan | `/pm` | 明确目标+范围 | 审查任务拆分合理性 | 输出任务列表 | <1天/任务，binary done |
+| 1. Brainstorm | `/pm` | 需求脑爆，自由发散 | PM 审查可行性+安排工作 | 输出任务列表 | <1天/任务，binary done |
 | 2. Architect | `/architect` | 确定影响范围 | 审查 UE API 可行性 | 输出技术方案 | UE API 可用，无冲突 |
 | 3. Implement | `/programmer` | 搭建函数骨架 | 审查签名+参数 | 填充实现+编译 | 3 文件全改，cargo build 过 |
-| 4. Test | `/qa-engineer` | 列出测试用例 | 审查覆盖完整性 | 执行测试 | 必填/可选/无效全测 |
+| 4. Test | `/qa-engineer` | 列出测试用例 | 审查覆盖完整性 | cargo test + 新增集成测试 | 必填/可选/无效全测，mock server 覆盖新 tool |
 | 5. Document | `/md-writer` | 确认需更新文档 | 审查范围是否遗漏 | 更新文档+lint | 7 文档完整 |
 | 6. Commit | `/git-flow` | 确认变更文件 | 审查 diff 范围 | stage+commit+push | 推送成功 |
 

@@ -113,6 +113,13 @@
 ### save_current_level
 保存当前关卡。无参数。
 
+### create_level
+创建新关卡并保存。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| path | string | ✅ | — | 新关卡资产路径，如 `/Game/Maps/NewMap` |
+
 ### play_in_editor
 启动 Play In Editor (PIE)。无参数。
 

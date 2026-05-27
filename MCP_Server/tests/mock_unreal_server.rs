@@ -83,6 +83,14 @@ impl MockUnrealServer {
                                         "success": true,
                                         "result": {"opened": true}
                                     }),
+                                    "create_level" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "path": req["params"]["path"].as_str().unwrap_or("/Game/Maps/NewMap"),
+                                            "created": true
+                                        }
+                                    }),
                                     "get_asset_list" => json!({
                                         "id": req["id"],
                                         "success": true,

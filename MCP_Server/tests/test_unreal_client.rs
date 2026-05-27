@@ -156,3 +156,19 @@ async fn test_get_actor_list() {
 
     mock.stop().await;
 }
+
+#[tokio::test]
+async fn test_create_level() {
+    let mock = MockUnrealServer::start(13387).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13387");
+    let response = client.send_command("create_level", json!({
+        "path": "/Game/Maps/TestLevel"
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["created"], true);
+    assert_eq!(response["result"]["path"], "/Game/Maps/TestLevel");
+
+    mock.stop().await;
+}

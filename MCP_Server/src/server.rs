@@ -159,6 +159,14 @@ impl UnrealMcpServer {
         self.call("save_current_level", json!({})).await
     }
 
+    #[tool(description = "Create a new level")]
+    async fn create_level(
+        &self,
+        #[tool(param)] path: String,
+    ) -> String {
+        self.call("create_level", json!({"path": path})).await
+    }
+
     #[tool(description = "Start Play In Editor (PIE)")]
     async fn play_in_editor(&self) -> String {
         self.call("play_in_editor", json!({})).await

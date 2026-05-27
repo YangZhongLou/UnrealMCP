@@ -70,6 +70,7 @@ UnrealMCP/
 | `get_editor_info` | 获取编辑器/引擎信息 |
 | `run_console_command` | 执行控制台命令 |
 | `save_current_level` | 保存当前关卡 |
+| `create_level` | 创建新关卡 |
 | `play_in_editor` | 启动 PIE |
 | `stop_play_in_editor` | 停止 PIE |
 | `take_screenshot` | 截取视口截图 |
