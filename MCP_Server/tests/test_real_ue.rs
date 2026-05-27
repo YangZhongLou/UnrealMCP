@@ -423,3 +423,58 @@ async fn test_real_ue_get_ue_logs() {
     assert_eq!(r["success"], true, "get_ue_logs failed: {:?}", r);
     assert!(r["result"]["count"].as_u64().is_some(), "Should have count");
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_set_view_mode() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("set_view_mode", json!({
+        "mode": "Unlit"
+    })).await.unwrap();
+    println!("ViewMode: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "set_view_mode failed: {:?}", r);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_show_debug() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("show_debug", json!({
+        "type": "Collision"
+    })).await.unwrap();
+    println!("Debug: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "show_debug failed: {:?}", r);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_take_screenshot() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("take_screenshot", json!({
+        "filename": "real_ue_test_screenshot"
+    })).await.unwrap();
+    println!("Screenshot: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "take_screenshot failed: {:?}", r);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_simulate_key() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("simulate_key", json!({
+        "key": "F",
+        "action": "press"
+    })).await.unwrap();
+    println!("Key: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "simulate_key failed: {:?}", r);
+
+    // Release
+    client.send_command("simulate_key", json!({
+        "key": "F",
+        "action": "release"
+    })).await.unwrap();
+}

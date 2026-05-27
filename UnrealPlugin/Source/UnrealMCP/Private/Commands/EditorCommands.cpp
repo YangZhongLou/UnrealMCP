@@ -470,16 +470,25 @@ FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params)
     bool bShouldRelease = Action.Equals(TEXT("release"), ESearchCase::IgnoreCase) ||
                           Action.Equals(TEXT("tap"), ESearchCase::IgnoreCase);
 
-    if (bShouldPress)
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        FKeyEvent PressEvent(Key, ModifierKeys, UserIndex, false, KeyCode, CharCode);
-        FSlateApplication::Get().ProcessKeyDownEvent(PressEvent);
-    }
-    if (bShouldRelease)
-    {
-        FKeyEvent ReleaseEvent(Key, ModifierKeys, UserIndex, true, KeyCode, CharCode);
-        FSlateApplication::Get().ProcessKeyUpEvent(ReleaseEvent);
-    }
+        if (bShouldPress)
+        {
+            FKeyEvent PressEvent(Key, ModifierKeys, UserIndex, false, KeyCode, CharCode);
+            FSlateApplication::Get().ProcessKeyDownEvent(PressEvent);
+        }
+        if (bShouldRelease)
+        {
+            FKeyEvent ReleaseEvent(Key, ModifierKeys, UserIndex, true, KeyCode, CharCode);
+            FSlateApplication::Get().ProcessKeyUpEvent(ReleaseEvent);
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"key\":\"%s\",\"action\":\"%s\"}}"), *KeyName, *Action);
 }
