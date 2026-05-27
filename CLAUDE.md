@@ -2,27 +2,37 @@
 
 ## 开发流程 (MUST FOLLOW)
 
-7 阶段流水线，不得跳过，任一阶段发现计划不合理则打回阶段 1。
+6 阶段流水线，不得跳过。每个阶段分为 3 个子步骤：**Plan → Review → Work**。
+任一子步骤发现计划不合理，打回该阶段的 Plan 重新计划。
 
 ```
-1.Plan → 2.Architect → 3.Implement → 4.Review → 5.Test → 6.Document → 7.Commit
-  ↑         │               │             │          │            │
-  └─────────┴───────────────┴─────────────┴──────────┴────────────┘
+1.Plan → 2.Architect → 3.Implement → 4.Test → 5.Document → 6.Commit
+  ↑         │               │             │            │
+  └─────────┴───────────────┴─────────────┴────────────┘
+             任一阶段子步骤失败，打回该阶段 Plan
+```
+
+每个阶段子步骤：
+
+```
+[Phase]
+  ├── Plan:   计划本阶段要完成什么
+  ├── Review: 审查计划是否合理、可行
+  └── Work:   执行（实现/测试/写文档/提交）
 ```
 
 **详细流程、每阶段 gates、3-step 新工具添加模板 → `/dev-flow` 技能。**
 
 ### 阶段速查
 
-| 阶段 | 技能 | 核心产物 | Gate |
-|------|------|----------|------|
-| 1. Plan | `/pm` | 任务列表 + 估算 + 退出标准 | <1天/任务，binary done 条件 |
-| 2. Architect | `/architect` | API 签名 + 数据流 + 文件清单 | UE API 可行 |
-| 3. Implement | `/programmer` | 3 文件代码 + cargo build 通过 | 全部 3 文件修改，编译通过 |
-| 4. Review | `/code-review` | 审查修复 | 命名/安全/null 检查 |
-| 5. Test | `/qa-engineer` | 测试通过 | 必填/可选/无效参数覆盖 |
-| 6. Document | `/md-writer` | 7 文档更新 + md-lint | 文档完整 |
-| 7. Commit | `/git-flow` | git push | 推送成功 |
+| 阶段 | 技能 | Plan | Review | Work | Gate |
+|------|------|------|--------|------|------|
+| 1. Plan | `/pm` | 明确目标+范围 | 审查任务拆分合理性 | 输出任务列表 | <1天/任务，binary done |
+| 2. Architect | `/architect` | 确定影响范围 | 审查 UE API 可行性 | 输出技术方案 | UE API 可用，无冲突 |
+| 3. Implement | `/programmer` | 搭建函数骨架 | 审查签名+参数 | 填充实现+编译 | 3 文件全改，cargo build 过 |
+| 4. Test | `/qa-engineer` | 列出测试用例 | 审查覆盖完整性 | 执行测试 | 必填/可选/无效全测 |
+| 5. Document | `/md-writer` | 确认需更新文档 | 审查范围是否遗漏 | 更新文档+lint | 7 文档完整 |
+| 6. Commit | `/git-flow` | 确认变更文件 | 审查 diff 范围 | stage+commit+push | 推送成功 |
 
 ---
 
