@@ -39,18 +39,19 @@ UnrealMCP/
 │           │       ├── AssetCommands.cpp
 │           │       ├── BlueprintCommands.cpp
 │           │       ├── ComponentCommands.cpp
-│           │       └── EditorCommands.cpp
+│           │       ├── EditorCommands.cpp
+│           │       └── MaterialCommands.cpp
 │           └── Public/
 │               ├── UnrealMCP.h
 │               └── MCPCommandServer.h
 ├── SkillHub/             # git submodule (技能库)
-├── .trae/skills/         # 软链接到 SkillHub 技能
-└── PLAN.md               # 开发计划
+├── docs/plan/            # 开发计划文档
+└── README.md
 ```
 
-## 已实现功能 (24 个工具)
+## 已实现功能 (48 个工具)
 
-### Actor 操作
+### Actor 操作 (9)
 | Tool | 描述 |
 |------|------|
 | `spawn_actor` | 在场景中创建 Actor |
@@ -60,8 +61,10 @@ UnrealMCP/
 | `set_actor_transform` | 设置 Actor 位置/旋转/缩放 |
 | `set_actor_property` | 设置 Actor 属性值 |
 | `get_actor_property` | 获取 Actor 属性值 |
+| `find_actors_by_class` | 按类名搜索 Actor |
+| `spawn_blueprint_actor` | 从 Blueprint 资产生成 Actor |
 
-### 编辑器操作
+### 编辑器操作 (10)
 | Tool | 描述 |
 |------|------|
 | `get_editor_info` | 获取编辑器/引擎信息 |
@@ -72,15 +75,22 @@ UnrealMCP/
 | `take_screenshot` | 截取视口截图 |
 | `focus_viewport` | 聚焦视口到 Actor 或坐标 |
 | `get_current_level` | 获取当前关卡信息 |
+| `get_selected_actors` | 获取当前选中的 Actor |
+| `select_actor` | 选中指定 Actor |
 
-### 蓝图操作
+### 蓝图操作 (8)
 | Tool | 描述 |
 |------|------|
 | `create_blueprint` | 创建 Blueprint 资产 |
 | `compile_blueprint` | 编译 Blueprint |
-| `get_blueprint_info` | 获取 Blueprint 信息 |
+| `get_blueprint_info` | 获取 Blueprint 信息与变量 |
+| `add_blueprint_node` | 添加节点到蓝图图形 (Event/CallFunction/Variable 等) |
+| `connect_blueprint_pins` | 连接两个节点之间的引脚 |
+| `get_blueprint_graph` | 获取蓝图图形结构 (节点/引脚/连接) |
+| `add_blueprint_variable` | 给蓝图添加变量 (支持 int/float/bool/Vector 等) |
+| `remove_blueprint_variable` | 从蓝图删除变量 |
 
-### 资产操作
+### 资产操作 (4)
 | Tool | 描述 |
 |------|------|
 | `get_asset_list` | 列出资产 |
@@ -88,17 +98,49 @@ UnrealMCP/
 | `delete_asset` | 删除资产 |
 | `rename_asset` | 重命名资产 |
 
-### 组件操作
+### 组件操作 (3)
 | Tool | 描述 |
 |------|------|
 | `get_actor_components` | 获取 Actor 上的所有组件 |
 | `add_component` | 添加组件到 Actor |
 | `remove_component` | 从 Actor 移除组件 |
 
-### 代码生成
+### 材质操作 (3)
 | Tool | 描述 |
 |------|------|
+| `set_material` | 应用材质到网格组件 |
+| `create_material_instance` | 创建材质实例 (MIC/MID) |
+| `set_material_parameter` | 设置材质参数 (标量/向量) |
+
+### 网格 / 光照 / 特效 (3)
+| Tool | 描述 |
+|------|------|
+| `set_static_mesh` | 设置 StaticMeshComponent 的网格 |
+| `set_light_parameters` | 设置光源参数 (强度/颜色/阴影) |
+| `spawn_effect` | 生成 Niagara/Cascade 粒子特效 |
+
+### 输入 / 相机 (2)
+| Tool | 描述 |
+|------|------|
+| `simulate_key` | 模拟键盘按键 (按下/释放/点击) |
+| `get_viewport_camera` | 获取编辑器视口相机位置与旋转 |
+
+### 视口 / 调试 (3)
+| Tool | 描述 |
+|------|------|
+| `set_view_mode` | 设置视口渲染模式 (Lit/Unlit/Wireframe 等) |
+| `show_debug` | 切换调试可视化 (碰撞/导航/边界) |
+| `add_actor_tag` | 给 Actor 添加标签 |
+
+### 关卡 / 代码 (2)
+| Tool | 描述 |
+|------|------|
+| `open_level` | 打开关卡 |
 | `generate_cpp_class` | 生成 C++ 类模板 |
+
+### 连接 (1)
+| Tool | 描述 |
+|------|------|
 | `check_unreal_connection` | 检查连接状态 |
 
 ## 安装使用
@@ -140,6 +182,7 @@ cargo build
 - "保存当前关卡"
 - "启动 Play In Editor"
 - "执行控制台命令 stat fps"
+- "在 BP_MyActor 的 BeginPlay 后面添加一个 PrintString 节点"
 
 ## 技术栈
 
@@ -149,7 +192,7 @@ cargo build
 
 ## 开发计划
 
-详见 [PLAN.md](PLAN.md)
+详见 [docs/plan/](docs/plan/)
 
 ## License
 

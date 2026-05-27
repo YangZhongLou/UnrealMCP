@@ -47,6 +47,11 @@ FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params);
 FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params);
 FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params);
+FString HandleConnectBlueprintPins(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
+FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -392,6 +397,26 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("show_debug"))
     {
         ResultStr = HandleShowDebug(Params);
+    }
+    else if (Method == TEXT("add_blueprint_node"))
+    {
+        ResultStr = HandleAddBlueprintNode(Params);
+    }
+    else if (Method == TEXT("connect_blueprint_pins"))
+    {
+        ResultStr = HandleConnectBlueprintPins(Params);
+    }
+    else if (Method == TEXT("get_blueprint_graph"))
+    {
+        ResultStr = HandleGetBlueprintGraph(Params);
+    }
+    else if (Method == TEXT("add_blueprint_variable"))
+    {
+        ResultStr = HandleAddBlueprintVariable(Params);
+    }
+    else if (Method == TEXT("remove_blueprint_variable"))
+    {
+        ResultStr = HandleRemoveBlueprintVariable(Params);
     }
     else
     {

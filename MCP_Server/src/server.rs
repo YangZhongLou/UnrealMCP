@@ -1144,6 +1144,187 @@ impl UnrealMcpServer {
             Err(e) => format!("Error: {}", e),
         }
     }
+
+    #[tool(description = "Add a node to a Blueprint graph (EventGraph or function graph)")]
+    async fn add_blueprint_node(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path, e.g. '/Game/Blueprints/BP_MyActor.BP_MyActor'")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Node type: CallFunction, Event, CustomEvent, VariableGet, VariableSet, PrintString")]
+        node_type: String,
+        #[tool(param)]
+        #[schemars(description = "Function name (for CallFunction), event name (for Event/CustomEvent), or variable name (for VariableGet/Set)")]
+        name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional class name to search for the function; auto-searched if omitted")]
+        class_name: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Graph type, default 'EventGraph'. Use function name for function graphs")]
+        graph_type: Option<String>,
+        #[tool(param)]
+        #[schemars(description = "Optional X position in graph")]
+        pos_x: Option<i32>,
+        #[tool(param)]
+        #[schemars(description = "Optional Y position in graph")]
+        pos_y: Option<i32>,
+    ) -> String {
+        let mut params = json!({
+            "path": path,
+            "node_type": node_type,
+        });
+        if let Some(n) = name {
+            match node_type.as_str() {
+                "CallFunction" => { params["function_name"] = json!(n); }
+                "Event" | "CustomEvent" => { params["event_name"] = json!(n); }
+                "VariableGet" | "VariableSet" => { params["variable_name"] = json!(n); }
+                _ => {}
+            }
+        }
+        if let Some(c) = class_name { params["class_name"] = json!(c); }
+        if let Some(g) = graph_type { params["graph_type"] = json!(g); }
+        if let Some(x) = pos_x { params["pos_x"] = json!(x); }
+        if let Some(y) = pos_y { params["pos_y"] = json!(y); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("add_blueprint_node", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Node added: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Connect two pins between nodes in a Blueprint graph")]
+    async fn connect_blueprint_pins(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Source node ID (GUID returned by add_blueprint_node or get_blueprint_graph)")]
+        source_node_id: String,
+        #[tool(param)]
+        #[schemars(description = "Source pin name, e.g. 'then', 'ReturnValue'")]
+        source_pin: String,
+        #[tool(param)]
+        #[schemars(description = "Target node ID")]
+        target_node_id: String,
+        #[tool(param)]
+        #[schemars(description = "Target pin name, e.g. 'execute', 'InString'")]
+        target_pin: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("connect_blueprint_pins", json!({
+            "path": path,
+            "source_node_id": source_node_id,
+            "source_pin": source_pin,
+            "target_node_id": target_node_id,
+            "target_pin": target_pin,
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Pins connected: {}[{}] -> {}[{}]", source_node_id, source_pin, target_node_id, target_pin)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Add a variable to a Blueprint")]
+    async fn add_blueprint_variable(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Variable name")]
+        variable_name: String,
+        #[tool(param)]
+        #[schemars(description = "Variable type: int, float, bool, string, name, text, Vector, Rotator, Transform, Color, or any UObject class like AActor")]
+        variable_type: String,
+        #[tool(param)]
+        #[schemars(description = "Optional: true if array type")]
+        is_array: Option<bool>,
+    ) -> String {
+        let mut params = json!({
+            "path": path,
+            "variable_name": variable_name,
+            "variable_type": variable_type,
+        });
+        if let Some(a) = is_array { params["is_array"] = json!(a); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("add_blueprint_variable", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Variable added: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Remove a variable from a Blueprint")]
+    async fn remove_blueprint_variable(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Variable name to remove")]
+        variable_name: String,
+    ) -> String {
+        let mut client = self.client.lock().await;
+        match client.send_command("remove_blueprint_variable", json!({
+            "path": path,
+            "variable_name": variable_name,
+        })).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Variable removed: {}", variable_name)
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Get the graph structure (nodes, pins, connections) of a Blueprint")]
+    async fn get_blueprint_graph(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Blueprint asset path")]
+        path: String,
+        #[tool(param)]
+        #[schemars(description = "Graph type, default 'EventGraph'")]
+        graph_type: Option<String>,
+    ) -> String {
+        let mut params = json!({"path": path});
+        if let Some(g) = graph_type { params["graph_type"] = json!(g); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("get_blueprint_graph", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Graph: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
 }
 
 #[tool(tool_box)]
