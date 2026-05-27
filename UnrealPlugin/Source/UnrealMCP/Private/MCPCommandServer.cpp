@@ -52,6 +52,8 @@ FString HandleConnectBlueprintPins(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
 FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
 FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
+FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -417,6 +419,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("remove_blueprint_variable"))
     {
         ResultStr = HandleRemoveBlueprintVariable(Params);
+    }
+    else if (Method == TEXT("import_asset"))
+    {
+        ResultStr = HandleImportAsset(Params);
+    }
+    else if (Method == TEXT("export_asset"))
+    {
+        ResultStr = HandleExportAsset(Params);
     }
     else
     {

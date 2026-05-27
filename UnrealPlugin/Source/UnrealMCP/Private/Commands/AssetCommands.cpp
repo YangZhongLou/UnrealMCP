@@ -3,6 +3,9 @@
 #include "EditorAssetLibrary.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
+#include "Misc/Paths.h"
 
 FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params)
 {
@@ -93,4 +96,83 @@ FString HandleRenameAsset(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":true,\"result\":{\"renamed\":true}}");
     }
     return TEXT("{\"success\":false,\"error\":\"Failed to rename asset\"}");
+}
+
+FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params)
+{
+    FString FilePath = Params->GetStringField(TEXT("file_path"));
+    FString DestinationPath = Params->HasField(TEXT("destination_path"))
+        ? Params->GetStringField(TEXT("destination_path"))
+        : TEXT("/Game");
+
+    TArray<FString> Files = { FilePath };
+
+    FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+    TArray<UObject*> ImportedAssets = AssetToolsModule.Get().ImportAssets(Files, DestinationPath);
+
+    if (ImportedAssets.Num() == 0)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Failed to import: %s\"}"), *FilePath);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Assets;
+    for (UObject* Asset : ImportedAssets)
+    {
+        if (Asset)
+        {
+            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+            Obj->SetStringField(TEXT("name"), Asset->GetName());
+            Obj->SetStringField(TEXT("path"), Asset->GetPathName());
+            Obj->SetStringField(TEXT("class"), Asset->GetClass()->GetName());
+            Assets.Add(MakeShareable(new FJsonValueObject(Obj)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("source_file"), FilePath);
+    Result->SetStringField(TEXT("destination_path"), DestinationPath);
+    Result->SetNumberField(TEXT("count"), Assets.Num());
+    Result->SetArrayField(TEXT("imported"), Assets);
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetPath = Params->GetStringField(TEXT("asset_path"));
+    FString OutputDir = Params->HasField(TEXT("output_dir"))
+        ? Params->GetStringField(TEXT("output_dir"))
+        : FPaths::ProjectSavedDir() / TEXT("Exports");
+
+    UObject* Asset = LoadObject<UObject>(nullptr, *AssetPath);
+    if (!Asset)
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Asset not found: %s\"}"), *AssetPath);
+    }
+
+    // Export using AssetTools
+    FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+    TArray<FString> AssetsToExport = { AssetPath };
+    AssetToolsModule.Get().ExportAssets(AssetsToExport, OutputDir);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("asset_path"), AssetPath);
+    Result->SetStringField(TEXT("output_dir"), OutputDir);
+    Result->SetStringField(TEXT("asset_name"), Asset->GetName());
+
+    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+    Response->SetBoolField(TEXT("success"), true);
+    Response->SetObjectField(TEXT("result"), Result);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    return Out;
 }

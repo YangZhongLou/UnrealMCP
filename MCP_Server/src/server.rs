@@ -1300,6 +1300,58 @@ impl UnrealMcpServer {
         }
     }
 
+    #[tool(description = "Import an external file into the Unreal content browser (FBX, PNG, WAV, etc.)")]
+    async fn import_asset(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Absolute path to the source file on disk")]
+        file_path: String,
+        #[tool(param)]
+        #[schemars(description = "Content browser destination path, default '/Game'")]
+        destination_path: Option<String>,
+    ) -> String {
+        let mut params = json!({"file_path": file_path});
+        if let Some(p) = destination_path { params["destination_path"] = json!(p); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("import_asset", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Imported: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    #[tool(description = "Export an asset to a file on disk")]
+    async fn export_asset(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "Asset path in content browser, e.g. '/Game/Meshes/SM_Table.SM_Table'")]
+        asset_path: String,
+        #[tool(param)]
+        #[schemars(description = "Optional output directory, defaults to Project/Saved/Exports")]
+        output_dir: Option<String>,
+    ) -> String {
+        let mut params = json!({"asset_path": asset_path});
+        if let Some(o) = output_dir { params["output_dir"] = json!(o); }
+
+        let mut client = self.client.lock().await;
+        match client.send_command("export_asset", params).await {
+            Ok(response) => {
+                if response["success"].as_bool().unwrap_or(false) {
+                    format!("Exported: {}", response["result"])
+                } else {
+                    format!("Failed: {}", response["error"])
+                }
+            }
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
     #[tool(description = "Get the graph structure (nodes, pins, connections) of a Blueprint")]
     async fn get_blueprint_graph(
         &self,

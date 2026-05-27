@@ -49,7 +49,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (48 个工具)
+## 已实现功能 (50 个工具)
 
 ### Actor 操作 (9)
 | Tool | 描述 |
@@ -90,13 +90,15 @@ UnrealMCP/
 | `add_blueprint_variable` | 给蓝图添加变量 (支持 int/float/bool/Vector 等) |
 | `remove_blueprint_variable` | 从蓝图删除变量 |
 
-### 资产操作 (4)
+### 资产操作 (6)
 | Tool | 描述 |
 |------|------|
 | `get_asset_list` | 列出资产 |
 | `get_asset_info` | 获取资产信息 |
 | `delete_asset` | 删除资产 |
 | `rename_asset` | 重命名资产 |
+| `import_asset` | 导入外部文件到 Content Browser (FBX/PNG/WAV 等) |
+| `export_asset` | 导出资产到磁盘 |
 
 ### 组件操作 (3)
 | Tool | 描述 |
