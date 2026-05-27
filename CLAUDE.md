@@ -30,7 +30,7 @@
 | 1. Brainstorm | `/pm` | 需求脑爆，自由发散 | PM 审查可行性+安排工作 | 输出任务列表 | <1天/任务，binary done |
 | 2. Architect | `/architect` | 确定影响范围 | 审查 UE API 可行性 | 输出技术方案 | UE API 可用，无冲突 |
 | 3. Implement | `/programmer` | 搭建函数骨架 | 审查签名+参数 | 填充实现+编译 | 3 文件全改，cargo build 过 |
-| 4. Test | `/qa-engineer` | 列出测试用例 | 审查覆盖完整性 | cargo test + 新增集成测试 | 必填/可选/无效全测，mock server 覆盖新 tool |
+| 4. Test | `/qa-engineer` | 列出测试用例 | 审查覆盖完整性 | mock 测试 + 真实 UE 环境测试 | mock 全过 + UE Editor 实测通过 |
 | 5. Document | `/md-writer` | 确认需更新文档 | 审查范围是否遗漏 | 更新文档+lint | 7 文档完整 |
 | 6. Commit | `/git-flow` | 确认变更文件 | 审查 diff 范围 | stage+commit+push | 推送成功 |
 
@@ -56,6 +56,41 @@ AI Client ──stdio──▶ Rust MCP Server ──TCP:13377──▶ Unreal P
 - **Rust side**: `server.rs` defines all `#[tool]` functions, sends JSON to Unreal via `unreal_client.rs`
 - **C++ side**: `MCPCommandServer.cpp` runs a TCP server on port 13377, dispatches commands to handler functions
 - **Command flow**: Rust `#[tool]` → `client.send_command("method_name", params)` → TCP → C++ `ProcessCommand()` → `HandleXxx()` → JSON response back
+
+## Testing
+
+### 两层测试体系 (MUST)
+
+| 层 | 位置 | 内容 | Gate |
+|----|------|------|------|
+| **Mock 测试** | `MCP_Server/tests/test_unreal_client.rs` | 用 `mock_unreal_server.rs` 模拟 UE 端，验证 Rust→TCP→JSON 链路 | 10/10 必过 |
+| **真实 UE 测试** | `MCP_Server/tests/test_real_ue.rs` | 编译 UnrealMCP 插件，启动真实 UE Editor，Rust 直连 13377 端口，验证完整链路 | `#[ignore]` 标记，**每个新 tool 必须手跑通过** |
+
+### 真实 UE 环境
+
+```bash
+# 1. 确保测试工程存在 (UE 5.7 项目, UnrealMCP 插件已启用)
+#    → D:\Playground\UEMCPTest\UEMCPTest.uproject
+
+# 2. 启动 UE Editor (非最小化，避免 Slate 事件阻塞)
+UnrealEditor.exe D:\Playground\UEMCPTest\UEMCPTest.uproject
+
+# 3. 跑真实集成测试
+cargo test --test test_real_ue -- --ignored --nocapture
+
+# 4. 验证通过后关编辑器
+```
+
+### 测试工程结构
+
+```
+D:\Playground\UEMCPTest\
+├── UEMCPTest.uproject          # UE 5.7 工程文件
+├── Source/UEMCPTest/           # 最小 C++ module (编译插件用)
+└── Plugins/UnrealMCP/          # → Junction → D:\Playground\UnrealMCP\UnrealPlugin
+```
+
+> 不存在则自动创建。关键：Plugin 用 Junction 软链，改源码即时生效，无需复制。
 
 ## Adding a New Tool
 
