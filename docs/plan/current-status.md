@@ -20,7 +20,7 @@
 新增 16 个实时 UE 测试，覆盖剩余 26 个工具，分 4 批次：
 
 | Batch | 测试数 | 覆盖工具 |
-|-------|--------|----------|
+| --- | --- | --- |
 | 2-1 Actor + Asset | 4 | `get_actor_list`, `spawn_blueprint_actor`, `delete_asset`, `rename_asset`, `import_asset`, `export_asset` |
 | 2-2 Mesh/Effect/Material | 4 | `set_static_mesh`, `spawn_effect`, `set_material`, `create_material_instance`, `set_material_parameter` |
 | 2-3 PIE + Level/Code | 3 | `play_in_editor`, `stop_play_in_editor`, `open_level`, `generate_cpp_class` |
@@ -31,7 +31,7 @@
 新增测试清单：
 
 | 测试 | 覆盖工具 |
-|------|----------|
+| --- | --- |
 | `test_real_ue_get_actor_list` | get_actor_list |
 | `test_real_ue_spawn_blueprint_actor` | create_blueprint, compile_blueprint, spawn_blueprint_actor |
 | `test_real_ue_delete_and_rename_asset` | delete_asset, rename_asset |

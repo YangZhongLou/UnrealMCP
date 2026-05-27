@@ -9,7 +9,7 @@
 ## 4.2.1 Actor 操作工具
 
 | Tool | 功能 | 优先级 |
-|------|------|--------|
+| --- | --- | --- |
 | `spawn_actor` | 在场景中创建 Actor | P0 |
 | `destroy_actor` | 删除指定 Actor | P0 |
 | `set_actor_transform` | 设置 Actor 位置/旋转/缩放 | P0 |
@@ -21,7 +21,7 @@
 ## 4.2.2 编辑器控制工具
 
 | Tool | 功能 | 优先级 |
-|------|------|--------|
+| --- | --- | --- |
 | `run_console_command` | 执行 Unreal 控制台命令 | P0 |
 | `save_current_level` | 保存当前关卡 | P0 |
 | `play_in_editor` | 启动 PIE | P0 |
@@ -33,7 +33,7 @@
 ## 4.2.3 蓝图操作工具 (Phase 2.5)
 
 | Tool | 功能 | 优先级 |
-|------|------|--------|
+| --- | --- | --- |
 | `create_blueprint` | 创建新蓝图 | P1 |
 | `add_blueprint_node` | 添加蓝图节点 | P1 |
 | `connect_blueprint_pins` | 连接蓝图引脚 | P1 |

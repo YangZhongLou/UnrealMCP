@@ -5,7 +5,7 @@
 ## 实际进度
 
 | 阶段 | 版本 | 目标 | 工具数 | 状态 |
-|------|------|------|--------|------|
+| --- | --- | --- | --- | --- |
 | Phase 1 | v0.1 | 基础通信 + 测试框架 | 3 | ✅ 完成 |
 | Phase 2 | v0.2 | Actor 操作 + 编辑器控制 + 蓝图创建 | 9 | ✅ 完成 |
 | Phase 3 | v0.3 | Content Browser 资产操作 | 4 | ✅ 完成 |
@@ -34,7 +34,7 @@
 ## 工具分布
 
 | 类别 | 工具数 | 工具 |
-|------|--------|------|
+| --- | --- | --- |
 | Actor 操作 | 9 | spawn, destroy, duplicate, list, transform, property get/set, find by class, spawn blueprint |
 | 编辑器操作 | 15 | editor info, console command, save level, create level, PIE start/stop, screenshot, focus viewport, current level, selected actors, select actor, get ue logs, execute editor command, focus editor panel, get editor commands |
 | 蓝图操作 | 11 | create, compile, info, add node, connect, get graph, add/remove variable, **create/delete function graph**, **list graphs** |
@@ -50,24 +50,23 @@
 ## 待定功能
 
 | 功能 | 优先级 | 说明 |
-|------|--------|------|
+| --- | --- | --- |
 | 实时日志推送 | 高 | UE 编辑器日志实时推送到 MCP Server |
 | UI 自动化 | 中 | Slate 菜单命令、编辑器面板操作 |
 | 蓝图函数图操作 | 中 | 在蓝图中创建/编辑 Function Graph |
-| 性能/压力测试 | 中 | 大场景操作响应时间、并发连接、内存泄漏测试 | ✅ 完成 (5 tests: timing + concurrency + reconnection) |
-| API 文档 | 中 | 所有 Tools 的详细说明文档 |
-| API 文档 | 中 | 所有 Tools 的详细说明文档 | ✅ 完成 |
-| monolith 重构 | 低 | 拆分 server.rs 为模块化 tool 文件 | ✅ 完成 (1565→497行, helper方法消除重复) |
+| 性能/压力测试 | 中 | 大场景操作响应时间、并发连接、内存泄漏测试 ✅ 完成 (5 tests: timing + concurrency + reconnection) |
+| API 文档 | 中 | 所有 Tools 的详细说明文档 ✅ 完成 |
+| monolith 重构 | 低 | 拆分 server.rs 为模块化 tool 文件 ✅ 完成 (1565→497行, helper方法消除重复) |
 
 ## 版本规划
 
 | 版本 | 目标 | 预计 |
-|------|------|------|
+| --- | --- | --- |
 | v0.5 | 当前 — 15 个 Phase 完成，50 个工具 | ✅ 完成 |
 | v0.6 | 实时日志推送 + UI 自动化 | TBD |
 | v1.0 | 全量测试 + 文档完善 + 正式发布 | ✅ 完成 (2026/05) — 58 tools, 42 real UE tests, 100% 覆盖 |
 
-# 7. 开发规范
+## 7. 开发规范
 
 ## 7.1 代码规范
 

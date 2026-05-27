@@ -2,7 +2,7 @@
 
 > [← 返回导航](README.md) | [← 上一页: 架构设计](02-architecture.md) | [下一页: Phase 1 →](04-phase1-foundation.md)
 
-```
+```text
 UnrealMCP/
 ├── MCP_Server/                    # Rust MCP Server
 │   ├── Cargo.toml
@@ -63,7 +63,7 @@ UnrealMCP/
 ## 文件规模
 
 | 文件 | 行数 (约) | 职责 |
-|------|-----------|------|
+| --- | --- | --- |
 | server.rs | 1300+ | 50 个 MCP Tool 定义 |
 | MCPCommandServer.cpp | 430+ | TCP Server + 命令分发 |
 | BlueprintCommands.cpp | 650+ | 8 个 Blueprint 相关 Handler |

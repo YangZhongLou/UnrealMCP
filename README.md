@@ -19,7 +19,7 @@ Unreal Editor API
 
 ## 项目结构
 
-```
+```text
 UnrealMCP/
 ├── MCP_Server/           # Rust MCP Server
 │   ├── Cargo.toml
@@ -52,6 +52,7 @@ UnrealMCP/
 ## 已实现功能 (58 个工具)
 
 ### Actor 操作 (9)
+
 | Tool | 描述 |
 | --- | --- |
 | `spawn_actor` | 在场景中创建 Actor |
@@ -65,6 +66,7 @@ UnrealMCP/
 | `spawn_blueprint_actor` | 从 Blueprint 资产生成 Actor |
 
 ### 编辑器操作 (15)
+
 | Tool | 描述 |
 | --- | --- |
 | `get_editor_info` | 获取编辑器/引擎信息 |
@@ -84,6 +86,7 @@ UnrealMCP/
 | `get_editor_commands` | 列出可用的编辑器命令 |
 
 ### 蓝图操作 (11)
+
 | Tool | 描述 |
 | --- | --- |
 | `create_blueprint` | 创建 Blueprint 资产 |
@@ -99,6 +102,7 @@ UnrealMCP/
 | `delete_blueprint_graph` | 删除蓝图函数图 |
 
 ### 资产操作 (6)
+
 | Tool | 描述 |
 | --- | --- |
 | `get_asset_list` | 列出资产 |
@@ -109,6 +113,7 @@ UnrealMCP/
 | `export_asset` | 导出资产到磁盘 |
 
 ### 组件操作 (3)
+
 | Tool | 描述 |
 | --- | --- |
 | `get_actor_components` | 获取 Actor 上的所有组件 |
@@ -116,6 +121,7 @@ UnrealMCP/
 | `remove_component` | 从 Actor 移除组件 |
 
 ### 材质操作 (3)
+
 | Tool | 描述 |
 | --- | --- |
 | `set_material` | 应用材质到网格组件 |
@@ -123,6 +129,7 @@ UnrealMCP/
 | `set_material_parameter` | 设置材质参数 (标量/向量) |
 
 ### 网格 / 光照 / 特效 (3)
+
 | Tool | 描述 |
 | --- | --- |
 | `set_static_mesh` | 设置 StaticMeshComponent 的网格 |
@@ -130,12 +137,14 @@ UnrealMCP/
 | `spawn_effect` | 生成 Niagara/Cascade 粒子特效 |
 
 ### 输入 / 相机 (2)
+
 | Tool | 描述 |
 | --- | --- |
 | `simulate_key` | 模拟键盘按键 (按下/释放/点击) |
 | `get_viewport_camera` | 获取编辑器视口相机位置与旋转 |
 
 ### 视口 / 调试 (3)
+
 | Tool | 描述 |
 | --- | --- |
 | `set_view_mode` | 设置视口渲染模式 (Lit/Unlit/Wireframe 等) |
@@ -143,12 +152,14 @@ UnrealMCP/
 | `add_actor_tag` | 给 Actor 添加标签 |
 
 ### 关卡 / 代码 (2)
+
 | Tool | 描述 |
 | --- | --- |
 | `open_level` | 打开关卡 |
 | `generate_cpp_class` | 生成 C++ 类模板 |
 
 ### 连接 (1)
+
 | Tool | 描述 |
 | --- | --- |
 | `check_unreal_connection` | 检查连接状态 |

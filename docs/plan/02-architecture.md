@@ -4,7 +4,7 @@
 
 ## 2.1 整体架构
 
-```
+```text
 AI Client (Claude / Cursor / Trae)
     │ stdio (MCP Protocol / JSON-RPC 2.0)
     ▼
@@ -29,7 +29,7 @@ Unreal Editor API (Game Thread)
 ## 2.2 技术栈
 
 | 组件 | 技术 | 理由 |
-|------|------|------|
+| --- | --- | --- |
 | MCP Server | Rust + `rmcp` crate + tokio | 高性能、类型安全、原生 MCP SDK |
 | Unreal Plugin | C++ Editor Module | 直接访问 Editor API |
 | 进程间通信 | TCP Socket (localhost:13377) | 简单可靠，跨平台 |
@@ -38,6 +38,7 @@ Unreal Editor API (Game Thread)
 ## 2.3 消息格式
 
 ### Request
+
 ```json
 {
   "id": "cmd_001",
@@ -51,6 +52,7 @@ Unreal Editor API (Game Thread)
 ```
 
 ### Response
+
 ```json
 {
   "success": true,
@@ -71,7 +73,7 @@ Unreal Editor API (Game Thread)
 
 MCPCommandServer 收到 JSON request 后，按 `method` 字段分发到对应 Handler:
 
-```
+```text
 ProcessCommand("spawn_actor")       → HandleSpawnActor()
 ProcessCommand("create_blueprint")   → HandleCreateBlueprint()
 ProcessCommand("get_asset_list")     → HandleGetAssetList()
