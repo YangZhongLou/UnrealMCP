@@ -548,3 +548,29 @@ async fn test_real_ue_set_light_parameters() {
 
     client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_execute_editor_command() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("execute_editor_command", json!({
+        "command": "Undo"
+    })).await.unwrap();
+    println!("Exec: {}", serde_json::to_string_pretty(&r).unwrap());
+    // Command may or may not be recognized — just verify it doesn't crash
+    assert!(r["success"].as_bool().is_some(), "execute_editor_command failed");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_focus_editor_panel() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("focus_editor_panel", json!({
+        "panel": "ContentBrowser"
+    })).await.unwrap();
+    println!("Panel: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "focus_editor_panel failed: {:?}", r);
+    assert_eq!(r["result"]["focused"], true);
+}

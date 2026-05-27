@@ -670,42 +670,30 @@ FString HandleExecuteEditorCommand(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
     }
 
-    UWorld* World = GEditor->GetEditorWorldContext().World();
     FString FullCmd = FString::Printf(TEXT("editor.%s"), *Command);
-    FString Result;
+    bool bExecuted = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    if (World)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (GEngine->Exec(World, *FullCmd))
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (World)
         {
-            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
-        }
-        else if (GEngine->Exec(World, *Command))
-        {
-            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+            bExecuted = GEngine->Exec(World, *FullCmd) || GEngine->Exec(World, *Command);
         }
         else
         {
-            Result = FString::Printf(TEXT("{\"success\":false,\"error\":\"Command not recognized: %s\"}"), *Command);
+            bExecuted = GEngine->Exec(nullptr, *FullCmd) || GEngine->Exec(nullptr, *Command);
         }
-    }
-    else
-    {
-        if (GEngine->Exec(nullptr, *FullCmd))
-        {
-            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
-        }
-        else if (GEngine->Exec(nullptr, *Command))
-        {
-            Result = FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
-        }
-        else
-        {
-            Result = FString::Printf(TEXT("{\"success\":false,\"error\":\"Command not recognized: %s\"}"), *Command);
-        }
-    }
+        DoneEvent->Trigger();
+    });
 
-    return Result;
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (bExecuted)
+        return FString::Printf(TEXT("{\"success\":true,\"result\":{\"command\":\"%s\",\"executed\":true}}"), *Command);
+    return FString::Printf(TEXT("{\"success\":false,\"error\":\"Command not recognized: %s\"}"), *Command);
 }
 
 FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params)
@@ -734,7 +722,14 @@ FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params)
             *Panel, *KnownStr);
     }
 
-    FGlobalTabmanager::Get()->TryInvokeTab(*TabId);
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&, TabId]()
+    {
+        FGlobalTabmanager::Get()->TryInvokeTab(*TabId);
+        DoneEvent->Trigger();
+    });
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("panel"), Panel);
