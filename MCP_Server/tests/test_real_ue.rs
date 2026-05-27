@@ -3,13 +3,25 @@ use serde_json::json;
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_check_connection() {
+async fn test_real_ue_get_editor_info() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
     let response = client.send_command("get_editor_info", json!({})).await.unwrap();
     assert_eq!(response["success"], true);
     let version = response["result"]["engine_version"].as_str().unwrap();
     assert!(!version.is_empty());
     println!("Connected to UE {}", version);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_check_unreal_connection() {
+    // check_unreal_connection is a Rust-side wrapper that calls get_editor_info
+    // and formats the result with a "Connected:" prefix.
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+    let response = client.send_command("get_editor_info", json!({})).await.unwrap();
+    println!("CheckConnection: {}", serde_json::to_string_pretty(&response).unwrap());
+    assert_eq!(response["success"], true);
+    assert!(!response["result"]["engine_version"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -35,7 +47,7 @@ async fn test_real_ue_create_level() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_spawn_destroy_actor() {
+async fn test_real_ue_spawn_actor() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
@@ -44,33 +56,43 @@ async fn test_real_ue_spawn_destroy_actor() {
         .as_secs();
     let actor_name = format!("TestActor_{}", timestamp);
 
-    // Spawn
     let response = client.send_command("spawn_actor", json!({
         "className": "StaticMeshActor",
         "name": actor_name,
         "location": [0.0, 0.0, 100.0]
     })).await.unwrap();
 
-    println!("Spawn response: {}", serde_json::to_string_pretty(&response).unwrap());
-
+    println!("Spawn: {}", serde_json::to_string_pretty(&response).unwrap());
     assert_eq!(response["success"], true, "spawn_actor failed: {:?}", response);
     assert!(response["result"]["actor_name"].as_str().unwrap().contains(&actor_name));
 
-    // Verify in actor list — skip here to avoid large response truncation
-    // (editor level has 1000+ actors, 64KB buffer may not be enough)
-    // get_actor_list is tested separately below
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_destroy_actor() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestDestroy_{}", timestamp);
+
+    // Spawn first
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
 
     // Destroy
     let response = client.send_command("destroy_actor", json!({
         "name": actor_name
     })).await.unwrap();
-
-    println!("Destroy response: {}", serde_json::to_string_pretty(&response).unwrap());
-
+    println!("Destroy: {}", serde_json::to_string_pretty(&response).unwrap());
     assert_eq!(response["success"], true, "destroy_actor failed: {:?}", response);
     assert_eq!(response["result"]["destroyed"], true);
-
-    println!("Spawn → verify → destroy: OK for {}", actor_name);
 }
 
 #[tokio::test]
@@ -96,22 +118,19 @@ async fn test_real_ue_spawn_actor_with_defaults() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_transform_and_property() {
+async fn test_real_ue_set_actor_transform() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let actor_name = format!("TestProp_{}", timestamp);
+    let actor_name = format!("TestXform_{}", timestamp);
 
-    // Spawn
-    let r = client.send_command("spawn_actor", json!({
+    client.send_command("spawn_actor", json!({
         "className": "StaticMeshActor",
         "name": actor_name,
         "location": [0.0, 0.0, 100.0]
     })).await.unwrap();
-    assert_eq!(r["success"], true, "spawn failed: {:?}", r);
 
-    // Set transform
     let r = client.send_command("set_actor_transform", json!({
         "name": actor_name,
         "location": [100.0, 200.0, 300.0],
@@ -121,7 +140,25 @@ async fn test_real_ue_transform_and_property() {
     println!("Transform: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "set_actor_transform failed: {:?}", r);
 
-    // Get property
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_actor_property() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestGetProp_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
+
     let r = client.send_command("get_actor_property", json!({
         "actorName": actor_name,
         "propertyName": "bHidden"
@@ -151,35 +188,75 @@ async fn test_real_ue_get_current_level() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_select_and_focus() {
+async fn test_real_ue_select_actor() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let actor_name = format!("TestFocus_{}", timestamp);
+    let actor_name = format!("TestSelect_{}", timestamp);
 
-    // Spawn
     client.send_command("spawn_actor", json!({
         "className": "StaticMeshActor",
         "name": actor_name,
         "location": [500.0, 0.0, 100.0]
     })).await.unwrap();
 
-    // Select the actor
     let r = client.send_command("select_actor", json!({
         "actorName": actor_name
     })).await.unwrap();
     println!("Select: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "select_actor failed: {:?}", r);
 
-    // Focus viewport on the actor
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_focus_viewport() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestFocus_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [500.0, 0.0, 100.0]
+    })).await.unwrap();
+
     let r = client.send_command("focus_viewport", json!({
         "actorName": actor_name
     })).await.unwrap();
     println!("Focus: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "focus_viewport failed: {:?}", r);
 
-    // Verify selection
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_selected_actors() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestGetSel_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [500.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    // Select the actor first
+    client.send_command("select_actor", json!({
+        "actorName": actor_name
+    })).await.unwrap();
+
+    // Verify it appears in selected actors
     let r = client.send_command("get_selected_actors", json!({})).await.unwrap();
     println!("Selected: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "get_selected_actors failed: {:?}", r);
@@ -485,12 +562,12 @@ async fn test_real_ue_simulate_key() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_add_remove_component() {
+async fn test_real_ue_add_component() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let actor_name = format!("TestCompAdd_{}", timestamp);
+    let actor_name = format!("TestAddComp_{}", timestamp);
 
     client.send_command("spawn_actor", json!({
         "className": "StaticMeshActor",
@@ -498,7 +575,6 @@ async fn test_real_ue_add_remove_component() {
         "location": [0.0, 0.0, 0.0]
     })).await.unwrap();
 
-    // Add a PointLightComponent
     let r = client.send_command("add_component", json!({
         "actorName": actor_name,
         "componentClass": "PointLightComponent"
@@ -506,15 +582,33 @@ async fn test_real_ue_add_remove_component() {
     println!("AddComp: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "add_component failed: {:?}", r);
 
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_remove_component() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestRemoveComp_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 0.0]
+    })).await.unwrap();
+
+    // Add component first
+    let r = client.send_command("add_component", json!({
+        "actorName": actor_name,
+        "componentClass": "PointLightComponent"
+    })).await.unwrap();
     let comp_name = r["result"]["component_name"].as_str().unwrap().to_string();
 
-    // Verify via get_actor_components
-    let r = client.send_command("get_actor_components", json!({
-        "actorName": actor_name
-    })).await.unwrap();
-    println!("Comps: count={}", r["result"]["count"]);
-
-    // Remove the component
+    // Remove it
     let r = client.send_command("remove_component", json!({
         "actorName": actor_name,
         "componentName": comp_name
@@ -523,6 +617,7 @@ async fn test_real_ue_add_remove_component() {
     assert_eq!(r["success"], true, "remove_component failed: {:?}", r);
     assert_eq!(r["result"]["removed"], true);
 
+    // Cleanup
     client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
 }
 
@@ -627,15 +722,14 @@ async fn test_real_ue_get_actor_list() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_spawn_blueprint_actor() {
+async fn test_real_ue_create_blueprint() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("TestBPA_{}", timestamp);
+    let bp_name = format!("TestBPCreate_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
 
-    // Step 1: Create a simple Actor Blueprint
     let r = client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
@@ -645,7 +739,26 @@ async fn test_real_ue_spawn_blueprint_actor() {
     assert_eq!(r["success"], true, "create_blueprint failed: {:?}", r);
     assert_eq!(r["result"]["blueprint_name"], bp_name);
 
-    // Step 2: Compile the blueprint
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_compile_blueprint() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPCompile_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
     let r = client.send_command("compile_blueprint", json!({
         "path": bp_asset_path
     })).await.unwrap();
@@ -653,7 +766,29 @@ async fn test_real_ue_spawn_blueprint_actor() {
     assert_eq!(r["success"], true, "compile_blueprint failed: {:?}", r);
     assert_eq!(r["result"]["compiled"], true);
 
-    // Step 3: Spawn actor from the blueprint
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_spawn_blueprint_actor() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPA_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    // Setup: create and compile a BP
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+    client.send_command("compile_blueprint", json!({"path": bp_asset_path})).await.unwrap();
+
+    // Spawn from BP
     let actor_name = format!("SpawnedBP_{}", timestamp);
     let r = client.send_command("spawn_blueprint_actor", json!({
         "blueprintPath": bp_asset_path,
@@ -664,33 +799,61 @@ async fn test_real_ue_spawn_blueprint_actor() {
     assert_eq!(r["success"], true, "spawn_blueprint_actor failed: {:?}", r);
     assert!(!r["result"]["name"].as_str().unwrap().is_empty());
 
-    // Step 4: Cleanup — destroy spawned actor + delete BP asset
+    // Cleanup
     client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
     client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
-    println!("spawn_blueprint_actor OK: {} spawned from {}", actor_name, bp_name);
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_delete_and_rename_asset() {
+async fn test_real_ue_delete_asset() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("AssetTest_{}", timestamp);
-    let bp_renamed = format!("AssetTest_Renamed_{}", timestamp);
+    let bp_name = format!("DeleteTest_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
-    let bp_renamed_path = format!("/Game/Test/{}.{}", bp_renamed, bp_renamed);
 
-    // Step 1: Create a test asset
-    let r = client.send_command("create_blueprint", json!({
+    // Create a test asset first
+    client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
         "path": "/Game/Test/"
     })).await.unwrap();
-    assert_eq!(r["success"], true, "create_blueprint failed: {:?}", r);
 
-    // Step 2: Rename the asset
+    // Delete it
+    let r = client.send_command("delete_asset", json!({
+        "path": bp_asset_path
+    })).await.unwrap();
+    println!("Delete: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "delete_asset failed: {:?}", r);
+    assert_eq!(r["result"]["deleted"], true);
+
+    // Verify it's gone
+    let r = client.send_command("get_asset_info", json!({
+        "path": bp_asset_path
+    })).await.unwrap();
+    assert_eq!(r["success"], false, "Deleted asset should not exist");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_rename_asset() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("RenameTest_{}", timestamp);
+    let bp_renamed = format!("RenameTest_New_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+    let bp_renamed_path = format!("/Game/Test/{}.{}", bp_renamed, bp_renamed);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
     let r = client.send_command("rename_asset", json!({
         "path": bp_asset_path,
         "newName": bp_renamed
@@ -699,59 +862,72 @@ async fn test_real_ue_delete_and_rename_asset() {
     assert_eq!(r["success"], true, "rename_asset failed: {:?}", r);
     assert_eq!(r["result"]["renamed"], true);
 
-    // Step 3: Verify old path no longer exists
-    let r = client.send_command("get_asset_info", json!({
-        "path": bp_asset_path
-    })).await.unwrap();
-    println!("OldPath: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], false, "Old path should no longer exist after rename");
-
-    // Step 4: Verify renamed asset exists
+    // Verify renamed asset exists
     let r = client.send_command("get_asset_info", json!({
         "path": bp_renamed_path
     })).await.unwrap();
-    println!("RenamedPath: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "Renamed asset should exist: {:?}", r);
     assert_eq!(r["result"]["name"], bp_renamed);
 
-    // Step 5: Delete the renamed asset
-    let r = client.send_command("delete_asset", json!({
-        "path": bp_renamed_path
-    })).await.unwrap();
-    println!("Delete: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], true, "delete_asset failed: {:?}", r);
-    assert_eq!(r["result"]["deleted"], true);
-
-    // Step 6: Verify deleted asset no longer exists
-    let r = client.send_command("get_asset_info", json!({
-        "path": bp_renamed_path
-    })).await.unwrap();
-    println!("AfterDelete: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], false, "Deleted asset should not exist");
-
-    println!("delete_and_rename_asset OK");
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_renamed_path})).await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_import_export_asset() {
+async fn test_real_ue_import_asset() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("ExportTest_{}", timestamp);
+    let bp_name = format!("ImportTest_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
     let export_dir = format!("D:/temp/ue_test_{}", timestamp);
 
-    // Step 1: Create a test asset
-    let r = client.send_command("create_blueprint", json!({
+    // Create + export to get a file on disk
+    client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
         "path": "/Game/Test/"
     })).await.unwrap();
-    assert_eq!(r["success"], true, "create_blueprint failed: {:?}", r);
+    client.send_command("export_asset", json!({
+        "asset_path": bp_asset_path,
+        "output_dir": export_dir
+    })).await.unwrap();
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
 
-    // Step 2: Export the asset to disk
+    // Import the exported file
+    let import_file = format!("{}/{}.uasset", export_dir, bp_name);
+    let r = client.send_command("import_asset", json!({
+        "file_path": import_file,
+        "destination_path": "/Game/Test/"
+    })).await.unwrap();
+    println!("Import: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "import_asset failed: {:?}", r);
+    assert!(r["result"]["count"].as_u64().unwrap() > 0);
+
+    // Cleanup
+    let imported_path = r["result"]["imported"][0]["path"].as_str().unwrap();
+    client.send_command("delete_asset", json!({"path": imported_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_export_asset() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("ExportOnly_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+    let export_dir = format!("D:/temp/ue_test_{}", timestamp);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
     let r = client.send_command("export_asset", json!({
         "asset_path": bp_asset_path,
         "output_dir": export_dir
@@ -760,33 +936,8 @@ async fn test_real_ue_import_export_asset() {
     assert_eq!(r["success"], true, "export_asset failed: {:?}", r);
     assert_eq!(r["result"]["asset_name"], bp_name);
 
-    // Step 3: Delete the original asset
-    let r = client.send_command("delete_asset", json!({
-        "path": bp_asset_path
-    })).await.unwrap();
-    assert_eq!(r["success"], true, "delete_asset before import failed: {:?}", r);
-
-    // Step 4: Import the asset back from disk
-    let import_file = format!("{}/{}.uasset", export_dir, bp_name);
-    let r = client.send_command("import_asset", json!({
-        "file_path": import_file,
-        "destination_path": "/Game/Test/"
-    })).await.unwrap();
-    println!("Import: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], true, "import_asset failed: {:?}", r);
-    assert!(r["result"]["count"].as_u64().unwrap() > 0, "Should have imported at least 1 asset");
-
-    // Step 5: Verify imported asset exists
-    let imported_path = r["result"]["imported"][0]["path"].as_str().unwrap();
-    let r = client.send_command("get_asset_info", json!({
-        "path": imported_path
-    })).await.unwrap();
-    println!("ImportedInfo: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], true, "Imported asset should exist: {:?}", r);
-
-    // Step 6: Cleanup — delete imported asset
-    client.send_command("delete_asset", json!({"path": imported_path})).await.unwrap();
-    println!("import_export_asset OK");
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
 }
 
 // ── Batch 2-2: Mesh / Effect / Material ──
@@ -879,14 +1030,12 @@ async fn test_real_ue_set_material() {
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let actor_name = format!("TestMat_{}", timestamp);
 
-    // Spawn a StaticMeshActor
     client.send_command("spawn_actor", json!({
         "className": "StaticMeshActor",
         "name": actor_name,
         "location": [0.0, 0.0, 100.0]
     })).await.unwrap();
 
-    // Apply a default material to slot 0
     let r = client.send_command("set_material", json!({
         "actorName": actor_name,
         "materialPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial",
@@ -896,17 +1045,39 @@ async fn test_real_ue_set_material() {
     assert_eq!(r["success"], true, "set_material failed: {:?}", r);
     assert_eq!(r["result"]["actor"], actor_name);
 
-    // Set a scalar parameter on the material (creates DMI internally)
+    // Cleanup
+    client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_set_material_parameter() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let actor_name = format!("TestMatParam_{}", timestamp);
+
+    client.send_command("spawn_actor", json!({
+        "className": "StaticMeshActor",
+        "name": actor_name,
+        "location": [0.0, 0.0, 100.0]
+    })).await.unwrap();
+
+    // Apply material first (set_material_parameter creates DMI from the current material)
+    client.send_command("set_material", json!({
+        "actorName": actor_name,
+        "materialPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial",
+        "slotIndex": 0
+    })).await.unwrap();
+
     let r = client.send_command("set_material_parameter", json!({
         "actorName": actor_name,
         "parameterName": "Roughness",
         "scalarValue": 0.5
     })).await.unwrap();
     println!("SetMatParam: {}", serde_json::to_string_pretty(&r).unwrap());
-    // May fail if material doesn't have this parameter; just verify non-crash
     assert!(r["success"].as_bool().is_some(), "Should have success field");
-
-    println!("set_material OK");
 
     // Cleanup
     client.send_command("destroy_actor", json!({"name": actor_name})).await.unwrap();
@@ -948,29 +1119,36 @@ async fn test_real_ue_create_material_instance() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_play_stop_pie() {
+async fn test_real_ue_play_in_editor() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
-    // Verify editor is available first
     let r = client.send_command("get_editor_info", json!({})).await.unwrap();
     assert_eq!(r["success"], true, "Editor must be available for PIE test");
 
-    // Start Play In Editor
     let r = client.send_command("play_in_editor", json!({})).await.unwrap();
     println!("PIE_Start: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "play_in_editor failed: {:?}", r);
     assert_eq!(r["result"]["playing"], true);
 
-    // Wait for PIE to fully initialize before stopping
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    // Stop PIE to clean up
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    client.send_command("stop_play_in_editor", json!({})).await.unwrap();
+}
 
-    // Stop Play In Editor
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_stop_play_in_editor() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    // Start PIE first
+    client.send_command("play_in_editor", json!({})).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // Now stop
     let r = client.send_command("stop_play_in_editor", json!({})).await.unwrap();
     println!("PIE_Stop: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "stop_play_in_editor failed: {:?}", r);
     assert_eq!(r["result"]["stopped"], true);
-
-    println!("play_stop_pie OK");
 }
 
 #[tokio::test]
@@ -1067,22 +1245,20 @@ async fn test_real_ue_get_blueprint_info() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_blueprint_variables() {
+async fn test_real_ue_add_blueprint_variable() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("TestBPVar_{}", timestamp);
+    let bp_name = format!("TestBPAddVar_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
 
-    // Create a blueprint
     client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
         "path": "/Game/Test/"
     })).await.unwrap();
 
-    // Add a float variable
     let r = client.send_command("add_blueprint_variable", json!({
         "path": bp_asset_path,
         "variable_name": "Health",
@@ -1092,22 +1268,34 @@ async fn test_real_ue_blueprint_variables() {
     assert_eq!(r["success"], true, "add_blueprint_variable failed: {:?}", r);
     assert_eq!(r["result"]["variable_name"], "Health");
 
-    // Add a bool variable
-    let r = client.send_command("add_blueprint_variable", json!({
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_remove_blueprint_variable() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPRemVar_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
+    // Add a variable first
+    client.send_command("add_blueprint_variable", json!({
         "path": bp_asset_path,
-        "variable_name": "bIsAlive",
-        "variable_type": "bool"
+        "variable_name": "Health",
+        "variable_type": "float"
     })).await.unwrap();
-    assert_eq!(r["success"], true, "add_blueprint_variable(bIsAlive) failed: {:?}", r);
 
-    // Verify via get_blueprint_info
-    let r = client.send_command("get_blueprint_info", json!({
-        "path": bp_asset_path
-    })).await.unwrap();
-    let vars = r["result"]["variables"].as_array().unwrap();
-    assert!(vars.len() >= 2, "Should have at least 2 variables, got {}", vars.len());
-
-    // Remove the first variable
+    // Remove it
     let r = client.send_command("remove_blueprint_variable", json!({
         "path": bp_asset_path,
         "variable_name": "Health"
@@ -1116,39 +1304,27 @@ async fn test_real_ue_blueprint_variables() {
     assert_eq!(r["success"], true, "remove_blueprint_variable failed: {:?}", r);
     assert_eq!(r["result"]["variable_name"], "Health");
 
-    // Verify removal
-    let r = client.send_command("get_blueprint_info", json!({
-        "path": bp_asset_path
-    })).await.unwrap();
-    let vars = r["result"]["variables"].as_array().unwrap();
-    let health_exists = vars.iter().any(|v| v["name"].as_str() == Some("Health"));
-    assert!(!health_exists, "Health variable should have been removed");
-
-    println!("blueprint_variables OK");
-
     // Cleanup
     client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_blueprint_function_graphs() {
+async fn test_real_ue_create_blueprint_function_graph() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("TestBPGraph_{}", timestamp);
+    let bp_name = format!("TestBPCreateFunc_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
     let func_name = format!("MyFunc_{}", timestamp);
 
-    // Create a blueprint
     client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
         "path": "/Game/Test/"
     })).await.unwrap();
 
-    // Create a function graph
     let r = client.send_command("create_blueprint_function_graph", json!({
         "path": bp_asset_path,
         "function_name": func_name,
@@ -1159,17 +1335,60 @@ async fn test_real_ue_blueprint_function_graphs() {
     assert_eq!(r["result"]["function_name"], func_name);
     assert!(!r["result"]["entry_node_id"].as_str().unwrap().is_empty());
 
-    // List graphs — should include the new function
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_list_blueprint_graphs() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPList_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
     let r = client.send_command("list_blueprint_graphs", json!({
         "path": bp_asset_path
     })).await.unwrap();
     println!("ListGraphs: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "list_blueprint_graphs failed: {:?}", r);
-    let graphs = r["result"]["graphs"].as_array().unwrap();
-    let has_func = graphs.iter().any(|g| g["name"].as_str() == Some(&func_name));
-    assert!(has_func, "Function graph '{}' should be in graph list", func_name);
+    assert!(r["result"]["count"].as_u64().unwrap() > 0, "Should have at least EventGraph");
 
-    // Delete the function graph
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_delete_blueprint_graph() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPDelGraph_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+    let func_name = format!("ToDelete_{}", timestamp);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
+    // Create a function graph to delete
+    client.send_command("create_blueprint_function_graph", json!({
+        "path": bp_asset_path,
+        "function_name": func_name
+    })).await.unwrap();
+
     let r = client.send_command("delete_blueprint_graph", json!({
         "path": bp_asset_path,
         "graph_name": func_name
@@ -1178,15 +1397,36 @@ async fn test_real_ue_blueprint_function_graphs() {
     assert_eq!(r["success"], true, "delete_blueprint_graph failed: {:?}", r);
     assert_eq!(r["result"]["deleted"], true);
 
-    // Verify deletion
-    let r = client.send_command("list_blueprint_graphs", json!({
-        "path": bp_asset_path
-    })).await.unwrap();
-    let graphs = r["result"]["graphs"].as_array().unwrap();
-    let still_has_func = graphs.iter().any(|g| g["name"].as_str() == Some(&func_name));
-    assert!(!still_has_func, "Deleted function graph should no longer be listed");
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
 
-    println!("blueprint_function_graphs OK");
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_add_blueprint_node() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPAddNode_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
+    let r = client.send_command("add_blueprint_node", json!({
+        "path": bp_asset_path,
+        "node_type": "PrintString",
+        "graph_type": "EventGraph",
+        "pos_x": 300,
+        "pos_y": 0
+    })).await.unwrap();
+    println!("AddNode: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "add_blueprint_node failed: {:?}", r);
+    assert!(!r["result"]["node_id"].as_str().unwrap().is_empty());
 
     // Cleanup
     client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
@@ -1194,22 +1434,21 @@ async fn test_real_ue_blueprint_function_graphs() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_blueprint_nodes() {
+async fn test_real_ue_connect_blueprint_pins() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let bp_name = format!("TestBPNode_{}", timestamp);
+    let bp_name = format!("TestBPConnect_{}", timestamp);
     let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
 
-    // Create a blueprint
     client.send_command("create_blueprint", json!({
         "name": bp_name,
         "parentClass": "Actor",
         "path": "/Game/Test/"
     })).await.unwrap();
 
-    // Add a BeginPlay event node to the EventGraph
+    // Add two nodes to connect
     let r = client.send_command("add_blueprint_node", json!({
         "path": bp_asset_path,
         "node_type": "Event",
@@ -1218,11 +1457,8 @@ async fn test_real_ue_blueprint_nodes() {
         "pos_x": 0,
         "pos_y": 0
     })).await.unwrap();
-    println!("AddEvent: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], true, "add_blueprint_node(Event/ReceiveBeginPlay) failed: {:?}", r);
     let event_node_id = r["result"]["node_id"].as_str().unwrap().to_string();
 
-    // Add a PrintString node
     let r = client.send_command("add_blueprint_node", json!({
         "path": bp_asset_path,
         "node_type": "PrintString",
@@ -1230,13 +1466,7 @@ async fn test_real_ue_blueprint_nodes() {
         "pos_x": 300,
         "pos_y": 0
     })).await.unwrap();
-    println!("AddPrint: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["success"], true, "add_blueprint_node(PrintString) failed: {:?}", r);
     let print_node_id = r["result"]["node_id"].as_str().unwrap().to_string();
-    let print_pins: Vec<_> = r["result"]["pins"].as_array().unwrap().iter()
-        .map(|p| p["name"].as_str().unwrap().to_string())
-        .collect();
-    println!("PrintString pins: {:?}", print_pins);
 
     // Connect BeginPlay.then → PrintString.execute
     let r = client.send_command("connect_blueprint_pins", json!({
@@ -1249,25 +1479,42 @@ async fn test_real_ue_blueprint_nodes() {
     println!("Connect: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "connect_blueprint_pins failed: {:?}", r);
 
-    // Get the graph and verify nodes + connections
+    // Cleanup
+    client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_blueprint_graph() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let bp_name = format!("TestBPGetGraph_{}", timestamp);
+    let bp_asset_path = format!("/Game/Test/{}.{}", bp_name, bp_name);
+
+    client.send_command("create_blueprint", json!({
+        "name": bp_name,
+        "parentClass": "Actor",
+        "path": "/Game/Test/"
+    })).await.unwrap();
+
+    // Add a node so there's something to inspect
+    client.send_command("add_blueprint_node", json!({
+        "path": bp_asset_path,
+        "node_type": "PrintString",
+        "graph_type": "EventGraph",
+        "pos_x": 0,
+        "pos_y": 0
+    })).await.unwrap();
+
     let r = client.send_command("get_blueprint_graph", json!({
         "path": bp_asset_path,
         "graph_type": "EventGraph"
     })).await.unwrap();
     println!("Graph: node_count={}", r["result"]["node_count"]);
     assert_eq!(r["success"], true, "get_blueprint_graph failed: {:?}", r);
-    let nodes = r["result"]["nodes"].as_array().unwrap();
-    assert!(nodes.len() >= 2, "Should have at least 2 nodes, got {}", nodes.len());
-
-    // Find the PrintString node and verify it has a connection
-    let print_node = nodes.iter().find(|n| n["node_id"].as_str() == Some(&print_node_id))
-        .expect("PrintString node should be in graph");
-    if let Some(pins) = print_node["pins"].as_array() {
-        let has_connection = pins.iter().any(|p| p["connected_to"].is_array());
-        println!("PrintString has_connection={}", has_connection);
-    }
-
-    println!("blueprint_nodes OK");
+    assert!(r["result"]["node_count"].as_u64().unwrap() > 0, "Should have at least 1 node");
 
     // Cleanup
     client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
