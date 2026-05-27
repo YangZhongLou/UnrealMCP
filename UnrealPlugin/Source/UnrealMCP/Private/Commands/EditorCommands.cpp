@@ -25,15 +25,24 @@ FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
     FString Command = Params->GetStringField(TEXT("command"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (World && World->GetGameInstance())
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        GEngine->Exec(World, *Command);
-    }
-    else
-    {
-        GEngine->Exec(GEditor->GetEditorWorldContext().World(), *Command);
-    }
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (World && World->GetGameInstance())
+        {
+            GEngine->Exec(World, *Command);
+        }
+        else if (World)
+        {
+            GEngine->Exec(World, *Command);
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     return TEXT("{\"success\":true,\"result\":{\"executed\":true}}");
 }

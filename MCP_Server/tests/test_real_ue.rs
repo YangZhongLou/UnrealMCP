@@ -283,3 +283,53 @@ async fn test_real_ue_find_actors_by_class() {
     assert_eq!(r["success"], true, "find_actors_by_class failed: {:?}", r);
     // Note: count may be 0 if no StaticMeshActors in level
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_asset_list() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("get_asset_list", json!({
+        "path": "/Game"
+    })).await.unwrap();
+    println!("Asset list: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_asset_list failed: {:?}", r);
+    assert!(r["result"]["count"].as_u64().is_some(), "Should have count field");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_viewport_camera() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("get_viewport_camera", json!({})).await.unwrap();
+    println!("Camera: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_viewport_camera failed: {:?}", r);
+    assert!(r["result"]["location"].is_array(), "Should have location array");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_run_console_command() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("run_console_command", json!({
+        "command": "stat fps"
+    })).await.unwrap();
+    println!("Console: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "run_console_command failed: {:?}", r);
+    assert_eq!(r["result"]["executed"], true);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_editor_commands() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let r = client.send_command("get_editor_commands", json!({
+        "prefix": "stat"
+    })).await.unwrap();
+    println!("Commands: {}", serde_json::to_string_pretty(&r).unwrap());
+    assert_eq!(r["success"], true, "get_editor_commands failed: {:?}", r);
+    assert!(r["result"]["count"].as_u64().unwrap() > 0, "Should find stat commands");
+}
