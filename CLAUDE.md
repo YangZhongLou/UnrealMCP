@@ -2,23 +2,33 @@
 
 ## 开发流程 (MUST FOLLOW)
 
-6 阶段流水线，不得跳过。每个阶段分为 3 个子步骤：**Plan → Review → Work**。
-任一子步骤发现计划不合理，打回该阶段的 Plan 重新计划。
+6 阶段流水线，不得跳过。每个阶段分为 **Plan → Review → Work → Review**：
+Plan Review 审查计划是否合理（不通过则重做 Plan），Work Review 审查执行结果是否正确（不通过则重做 Work）。
 
 ```text
-1.Brainstorm → 2.Architect → 3.Implement → 4.Test → 5.Document → 6.Commit
-  ↑               │               │             │            │
-  └───────────────┴───────────────┴─────────────┴────────────┘
-                   任一阶段子步骤失败，打回该阶段 Plan
+每个阶段: Plan ⇄ Review(计划) → 通过 → Work ⇄ Review(结果) → 通过 → 下一阶段
+
+1.Brainstorm ─▶ 2.Architect ─▶ 3.Implement ─▶ 4.Test ─▶ 5.Document ─▶ 6.Commit
+      ▲               ▲               ▲            ▲            ▲
+      │               │               │            │            │
+      └───────────────┴───────────────┴────────────┴────────────┘
+        任一 Review 不通过 → 打回对应步骤重做 (Plan 或 Work)
 ```
 
 每个阶段子步骤：
 
 ```text
 [Phase]
-  ├── Plan:   计划本阶段要完成什么
-  ├── Review: 审查计划是否合理、可行
-  └── Work:   执行（实现/测试/写文档/提交）
+  ┌── Plan:   计划本阶段要完成什么 ◀──────────────┐
+  │                                               │
+  ├── Review: 审查计划是否合理、可行 ── 有问题 ──┘
+  │   │ 通过
+  ├── Work:   执行（实现/测试/写文档/提交）◀─────┐
+  │   │                                           │
+  └── Review: 审查工作结果 ── 有问题 ────────────┘
+      │ 通过
+      ▼
+   下一阶段
 ```
 
 **详细流程、每阶段 gates、3-step 新工具添加模板 → `/dev-flow` 技能。**
