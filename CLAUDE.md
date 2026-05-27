@@ -14,7 +14,7 @@
 
 每个阶段子步骤：
 
-```
+```text
 [Phase]
   ├── Plan:   计划本阶段要完成什么
   ├── Review: 审查计划是否合理、可行
@@ -49,7 +49,7 @@ cd MCP_Server && cargo build --release # release
 
 ## Project Architecture
 
-```
+```text
 AI Client ──stdio──▶ Rust MCP Server ──TCP:13377──▶ Unreal Plugin ──▶ UE Editor API
 ```
 
@@ -83,7 +83,7 @@ cargo test --test test_real_ue -- --ignored --nocapture
 
 ### 测试工程结构
 
-```
+```text
 D:\Playground\UEMCPTest\
 ├── UEMCPTest.uproject          # UE 5.7 工程文件
 ├── Source/UEMCPTest/           # 最小 C++ module (编译插件用)
@@ -105,19 +105,22 @@ D:\Playground\UEMCPTest\
 ## Code Conventions
 
 ### C++
+
 - Use `TEXT()` macro for all string literals passed to UE API
 - JSON serialization: `FJsonSerializer::Serialize` + `TJsonWriterFactory<>`
 - JSON parsing: `Params->GetStringField()`, `HasField()` before optional fields
 - No header files for command handlers — forward declare in MCPCommandServer.cpp
 
 ### Rust
+
 - Monolithic `server.rs` — all tools in one `impl` block (do NOT create new modules without approval)
 - `json!({})` macro for building params maps
 - Each tool is `async fn` taking `&self` + params returning `String`
 - Error format: `format!("Error: {}", e)` for network errors
 
 ### Commit Messages
-```
+
+```text
 feat: Complete Phase <N> - <Description>
 ```
 Use `feat:`, `fix:`, `docs:`, `refactor:`, `chore:` prefixes.
