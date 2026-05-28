@@ -138,22 +138,32 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
 
 FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
-    if (GEditor)
+    bool bSuccess = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        GEditor->RequestPlaySession(FRequestPlaySessionParams());
-        return TEXT("{\"success\":true,\"result\":{\"playing\":true}}");
-    }
-    return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+        if (GEditor) { GEditor->RequestPlaySession(FRequestPlaySessionParams()); bSuccess = true; }
+        DoneEvent->Trigger();
+    });
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+    if (!bSuccess) return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    return TEXT("{\"success\":true,\"result\":{\"playing\":true}}");
 }
 
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
-    if (GEditor)
+    bool bSuccess = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        GEditor->EndPlayMap();
-        return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
-    }
-    return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+        if (GEditor) { GEditor->EndPlayMap(); bSuccess = true; }
+        DoneEvent->Trigger();
+    });
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+    if (!bSuccess) return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
 }
 
 FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
@@ -162,7 +172,14 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("filename"))
         : TEXT("screenshot");
 
-    FScreenshotRequest::RequestScreenshot(Filename, false, false);
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        FScreenshotRequest::RequestScreenshot(Filename, false, false);
+        DoneEvent->Trigger();
+    });
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("path"), FString::Printf(TEXT("%s/Saved/Screenshots/%s.png"), *FPaths::ProjectDir(), *Filename));
@@ -495,41 +512,53 @@ FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params)
 {
-    FVector Location = FVector::ZeroVector;
-    FRotator Rotation = FRotator::ZeroRotator;
-    bool bFound = false;
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    if (GCurrentLevelEditingViewportClient)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        Location = GCurrentLevelEditingViewportClient->GetViewLocation();
-        Rotation = GCurrentLevelEditingViewportClient->GetViewRotation();
-        bFound = true;
-    }
+        if (!GCurrentLevelEditingViewportClient)
+        {
+            ErrorMsg = TEXT("No viewport camera available");
+            DoneEvent->Trigger();
+            return;
+        }
 
-    if (!bFound)
-    {
-        return TEXT("{\"success\":false,\"error\":\"No viewport camera available\"}");
-    }
+        FVector Location = GCurrentLevelEditingViewportClient->GetViewLocation();
+        FRotator Rotation = GCurrentLevelEditingViewportClient->GetViewRotation();
 
-    TArray<TSharedPtr<FJsonValue>> LocArr;
-    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.X)));
-    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Y)));
-    LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Z)));
+        TArray<TSharedPtr<FJsonValue>> LocArr;
+        LocArr.Add(MakeShareable(new FJsonValueNumber(Location.X)));
+        LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Y)));
+        LocArr.Add(MakeShareable(new FJsonValueNumber(Location.Z)));
 
-    TArray<TSharedPtr<FJsonValue>> RotArr;
-    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Pitch)));
-    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Yaw)));
-    RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Roll)));
+        TArray<TSharedPtr<FJsonValue>> RotArr;
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Pitch)));
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Yaw)));
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rotation.Roll)));
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetArrayField(TEXT("location"), LocArr);
-    Result->SetArrayField(TEXT("rotation"), RotArr);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetArrayField(TEXT("location"), LocArr);
+        Result->SetArrayField(TEXT("rotation"), RotArr);
 
-    FString ResultStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
-    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
 
-    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+    return Out;
 }
 
 FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params)
@@ -586,12 +615,15 @@ FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params)
 {
     FString Mode = Params->GetStringField(TEXT("mode"));
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    FString Cmd = FString::Printf(TEXT("viewmode %s"), *Mode);
-    if (World)
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        GEngine->Exec(World, *Cmd);
-    }
+        if (UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr)
+            GEngine->Exec(World, *FString::Printf(TEXT("viewmode %s"), *Mode));
+        DoneEvent->Trigger();
+    });
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"view_mode\":\"%s\"}}"), *Mode);
 }
@@ -748,27 +780,41 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("prefix"))
         : TEXT("editor.");
 
-    TArray<TSharedPtr<FJsonValue>> Commands;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    FConsoleObjectVisitor VisitorDelegate;
-    VisitorDelegate.BindLambda([&Commands](const TCHAR* Name, IConsoleObject* Obj)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        TSharedPtr<FJsonObject> Cmd = MakeShareable(new FJsonObject);
-        Cmd->SetStringField(TEXT("name"), FString(Name));
-        Cmd->SetStringField(TEXT("help"), Obj->GetHelp());
-        Commands.Add(MakeShareable(new FJsonValueObject(Cmd)));
+        TArray<TSharedPtr<FJsonValue>> Commands;
+
+        FConsoleObjectVisitor VisitorDelegate;
+        VisitorDelegate.BindLambda([&Commands](const TCHAR* Name, IConsoleObject* Obj)
+        {
+            TSharedPtr<FJsonObject> Cmd = MakeShareable(new FJsonObject);
+            Cmd->SetStringField(TEXT("name"), FString(Name));
+            Cmd->SetStringField(TEXT("help"), Obj->GetHelp());
+            Commands.Add(MakeShareable(new FJsonValueObject(Cmd)));
+        });
+
+        IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(VisitorDelegate, *Prefix);
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("prefix"), Prefix);
+        Result->SetNumberField(TEXT("count"), Commands.Num());
+        Result->SetArrayField(TEXT("commands"), Commands);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
     });
 
-    IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(VisitorDelegate, *Prefix);
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("prefix"), Prefix);
-    Result->SetNumberField(TEXT("count"), Commands.Num());
-    Result->SetArrayField(TEXT("commands"), Commands);
-
-    FString ResultStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
-    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
-
-    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+    return Out;
 }

@@ -75,23 +75,44 @@ FString HandleSetMaterial(const TSharedPtr<FJsonObject>& Params)
         ? FMath::RoundToInt(Params->GetNumberField(TEXT("slotIndex")))
         : 0;
 
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
+    FString ErrorMsg;
+    FString ResultStr;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    AActor* Actor = FindActor(World, ActorName);
-    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
 
-    UMeshComponent* MeshComp = FindMeshComponent(Actor, ComponentName, SlotIndex);
-    if (!MeshComp) return TEXT("{\"success\":false,\"error\":\"No mesh component found on actor\"}");
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName) { Actor = *It; break; }
+        }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
 
-    UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
-    if (!Material) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Material not found: %s\"}"), *MaterialPath);
+        UMeshComponent* MeshComp = FindMeshComponent(Actor, ComponentName, SlotIndex);
+        if (!MeshComp) { ErrorMsg = TEXT("No mesh component found on actor"); DoneEvent->Trigger(); return; }
 
-    MeshComp->SetMaterial(SlotIndex, Material);
-    Actor->MarkPackageDirty();
+        UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
+        if (!Material) { ErrorMsg = FString::Printf(TEXT("Material not found: %s"), *MaterialPath); DoneEvent->Trigger(); return; }
 
-    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"material\":\"%s\",\"slot\":%d}}"),
-        *ActorName, *MaterialPath, SlotIndex);
+        MeshComp->SetMaterial(SlotIndex, Material);
+        Actor->MarkPackageDirty();
+
+        ResultStr = FString::Printf(TEXT("{\"actor\":\"%s\",\"material\":\"%s\",\"slot\":%d}"),
+            *ActorName, *MaterialPath, SlotIndex);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
 
 FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
@@ -102,68 +123,92 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("instanceType"))
         : TEXT("constant");
 
-    UMaterialInterface* ParentMat = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
-    if (!ParentMat)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Parent material not found: %s\"}"), *ParentPath);
-    }
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    FString PackageName;
-    FString AssetName;
-    Path.Split(TEXT("."), &PackageName, &AssetName);
-    if (AssetName.IsEmpty())
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AssetName = FPaths::GetBaseFilename(Path);
-        PackageName = Path;
-    }
-
-    UPackage* Package = CreatePackage(*PackageName);
-    if (!Package)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to create package\"}");
-    }
-
-    UMaterialInstance* NewInstance = nullptr;
-    if (InstanceType.Equals(TEXT("dynamic"), ESearchCase::IgnoreCase))
-    {
-        NewInstance = UMaterialInstanceDynamic::Create(ParentMat, Package, FName(*AssetName));
-    }
-    else
-    {
-        UMaterialInstanceConstant* MIC = NewObject<UMaterialInstanceConstant>(Package, FName(*AssetName), RF_Public | RF_Standalone);
-        if (MIC)
+        UMaterialInterface* ParentMat = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
+        if (!ParentMat)
         {
-            MIC->SetParentEditorOnly(ParentMat);
-            NewInstance = MIC;
+            ErrorMsg = FString::Printf(TEXT("Parent material not found: %s"), *ParentPath);
+            DoneEvent->Trigger();
+            return;
         }
-    }
 
-    if (!NewInstance)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to create material instance\"}");
-    }
+        FString PackageName;
+        FString AssetName;
+        Path.Split(TEXT("."), &PackageName, &AssetName);
+        if (AssetName.IsEmpty())
+        {
+            AssetName = FPaths::GetBaseFilename(Path);
+            PackageName = Path;
+        }
 
-    NewInstance->PostEditChange();
-    Package->MarkPackageDirty();
-    FAssetRegistryModule& AssetRegModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-    AssetRegModule.AssetCreated(NewInstance);
+        UPackage* Package = CreatePackage(*PackageName);
+        if (!Package)
+        {
+            ErrorMsg = TEXT("Failed to create package");
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FString PackageFileName = FPackageName::LongPackageNameToFilename(
-        PackageName, FPackageName::GetAssetPackageExtension());
-    FSavePackageArgs SaveArgs;
-    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-    UPackage::SavePackage(Package, NewInstance, *PackageFileName, SaveArgs);
+        UMaterialInstance* NewInstance = nullptr;
+        if (InstanceType.Equals(TEXT("dynamic"), ESearchCase::IgnoreCase))
+        {
+            NewInstance = UMaterialInstanceDynamic::Create(ParentMat, Package, FName(*AssetName));
+        }
+        else
+        {
+            UMaterialInstanceConstant* MIC = NewObject<UMaterialInstanceConstant>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+            if (MIC)
+            {
+                MIC->SetParentEditorOnly(ParentMat);
+                NewInstance = MIC;
+            }
+        }
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("path"), Path);
-    Result->SetStringField(TEXT("type"), InstanceType.ToLower());
-    Result->SetStringField(TEXT("parent"), ParentPath);
+        if (!NewInstance)
+        {
+            ErrorMsg = TEXT("Failed to create material instance");
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FString ResultStr;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
-    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        NewInstance->PostEditChange();
+        Package->MarkPackageDirty();
+        FAssetRegistryModule& AssetRegModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        AssetRegModule.AssetCreated(NewInstance);
 
-    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+        FString PackageFileName = FPackageName::LongPackageNameToFilename(
+            PackageName, FPackageName::GetAssetPackageExtension());
+        FSavePackageArgs SaveArgs;
+        SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+        UPackage::SavePackage(Package, NewInstance, *PackageFileName, SaveArgs);
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("path"), Path);
+        Result->SetStringField(TEXT("type"), InstanceType.ToLower());
+        Result->SetStringField(TEXT("parent"), ParentPath);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+    return Out;
 }
 
 FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params)
@@ -176,54 +221,72 @@ FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params)
     int32 SlotIndex = Params->HasField(TEXT("slotIndex"))
         ? FMath::RoundToInt(Params->GetNumberField(TEXT("slotIndex")))
         : 0;
-
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    if (!World) return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-
-    AActor* Actor = FindActor(World, ActorName);
-    if (!Actor) return FString::Printf(TEXT("{\"success\":false,\"error\":\"Actor not found: %s\"}"), *ActorName);
-
-    UMeshComponent* MeshComp = FindMeshComponent(Actor, ComponentName, SlotIndex);
-    if (!MeshComp) return TEXT("{\"success\":false,\"error\":\"No mesh component found\"}");
-
-    UMaterialInterface* MatInterface = MeshComp->GetMaterial(SlotIndex);
-    if (!MatInterface) return TEXT("{\"success\":false,\"error\":\"No material in slot\"}");
-
-    UMaterialInstance* MatInstance = Cast<UMaterialInstance>(MatInterface);
-    if (!MatInstance)
-    {
-        MatInstance = MeshComp->CreateDynamicMaterialInstance(SlotIndex, MatInterface);
-    }
-
-    if (!MatInstance) return TEXT("{\"success\":false,\"error\":\"Cannot create/modify material instance\"}");
-
-    UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MatInstance);
-    if (!MID)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Cannot modify non-dynamic material instance\"}");
-    }
-
-    if (Params->HasField(TEXT("scalarValue")))
-    {
-        float Value = Params->GetNumberField(TEXT("scalarValue"));
-        MID->SetScalarParameterValue(FName(*ParameterName), Value);
-    }
-    else if (Params->HasField(TEXT("vectorValue")))
+    bool bHasScalar = Params->HasField(TEXT("scalarValue"));
+    bool bHasVector = Params->HasField(TEXT("vectorValue"));
+    float ScalarValue = bHasScalar ? (float)Params->GetNumberField(TEXT("scalarValue")) : 0.0f;
+    FString VectorJson;
+    if (bHasVector)
     {
         const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("vectorValue"));
         if (Arr.Num() >= 3)
+            VectorJson = FString::Printf(TEXT("[%f,%f,%f]"), Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+    }
+
+    FString ErrorMsg;
+    FString ResultStr;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
         {
+            if (It->GetName() == ActorName) { Actor = *It; break; }
+        }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+
+        UMeshComponent* MeshComp = FindMeshComponent(Actor, ComponentName, SlotIndex);
+        if (!MeshComp) { ErrorMsg = TEXT("No mesh component found"); DoneEvent->Trigger(); return; }
+
+        UMaterialInterface* MatInterface = MeshComp->GetMaterial(SlotIndex);
+        if (!MatInterface) { ErrorMsg = TEXT("No material in slot"); DoneEvent->Trigger(); return; }
+
+        UMaterialInstance* MatInstance = Cast<UMaterialInstance>(MatInterface);
+        if (!MatInstance)
+            MatInstance = MeshComp->CreateDynamicMaterialInstance(SlotIndex, MatInterface);
+        if (!MatInstance) { ErrorMsg = TEXT("Cannot create/modify material instance"); DoneEvent->Trigger(); return; }
+
+        UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(MatInstance);
+        if (!MID) { ErrorMsg = TEXT("Cannot modify non-dynamic material instance"); DoneEvent->Trigger(); return; }
+
+        if (bHasScalar)
+            MID->SetScalarParameterValue(FName(*ParameterName), ScalarValue);
+        else if (bHasVector)
+        {
+            const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("vectorValue"));
             FLinearColor Color(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
             MID->SetVectorParameterValue(FName(*ParameterName), Color);
         }
-    }
-    else
-    {
-        return TEXT("{\"success\":false,\"error\":\"Provide scalarValue or vectorValue\"}");
-    }
+        else
+        {
+            ErrorMsg = TEXT("Provide scalarValue or vectorValue");
+            DoneEvent->Trigger();
+            return;
+        }
 
-    MeshComp->MarkRenderStateDirty();
+        MeshComp->MarkRenderStateDirty();
+        ResultStr = FString::Printf(TEXT("{\"actor\":\"%s\",\"parameter\":\"%s\"}"), *ActorName, *ParameterName);
+        DoneEvent->Trigger();
+    });
 
-    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"parameter\":\"%s\"}}"),
-        *ActorName, *ParameterName);
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }

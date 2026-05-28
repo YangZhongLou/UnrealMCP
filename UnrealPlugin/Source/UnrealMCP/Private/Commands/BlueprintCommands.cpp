@@ -32,46 +32,63 @@ FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params)
         Path = TEXT("/Game/Blueprints");
     }
 
-    UClass* ParentClass = FindFirstObject<UClass>(*ParentClassName);
-    if (!ParentClass)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ParentClass = AActor::StaticClass();
-    }
+        UClass* ParentClass = FindFirstObject<UClass>(*ParentClassName);
+        if (!ParentClass)
+        {
+            ParentClass = AActor::StaticClass();
+        }
 
-    FString PackagePath = Path / Name;
-    UPackage* Package = CreatePackage(*PackagePath);
+        FString PackagePath = Path / Name;
+        UPackage* Package = CreatePackage(*PackagePath);
 
-    UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
-        ParentClass,
-        Package,
-        FName(*Name),
-        EBlueprintType::BPTYPE_Normal,
-        UBlueprint::StaticClass(),
-        UBlueprintGeneratedClass::StaticClass(),
-        FName("CreateBlueprintCommand")
-    );
+        UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+            ParentClass,
+            Package,
+            FName(*Name),
+            EBlueprintType::BPTYPE_Normal,
+            UBlueprint::StaticClass(),
+            UBlueprintGeneratedClass::StaticClass(),
+            FName("CreateBlueprintCommand")
+        );
 
-    if (!Blueprint)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to create blueprint\"}");
-    }
+        if (!Blueprint)
+        {
+            ErrorMsg = TEXT("Failed to create blueprint");
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FAssetRegistryModule& AssetRegModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-    AssetRegModule.AssetCreated(Blueprint);
-    Package->MarkPackageDirty();
+        FAssetRegistryModule& AssetRegModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        AssetRegModule.AssetCreated(Blueprint);
+        Package->MarkPackageDirty();
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("blueprint_name"), Name);
-    Result->SetStringField(TEXT("path"), PackagePath);
-    Result->SetStringField(TEXT("parent_class"), ParentClass->GetName());
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("blueprint_name"), Name);
+        Result->SetStringField(TEXT("path"), PackagePath);
+        Result->SetStringField(TEXT("parent_class"), ParentClass->GetName());
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -79,17 +96,31 @@ FString HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params)
 {
     FString Path = Params->GetStringField(TEXT("path"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
+        {
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
 
-    EBlueprintCompileOptions Options = EBlueprintCompileOptions::SkipGarbageCollection;
-    FKismetEditorUtilities::CompileBlueprint(Blueprint, Options);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return TEXT("{\"success\":true,\"result\":{\"compiled\":true}}");
 }
@@ -98,34 +129,51 @@ FString HandleGetBlueprintInfo(const TSharedPtr<FJsonObject>& Params)
 {
     FString Path = Params->GetStringField(TEXT("path"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
+        {
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("name"), Blueprint->GetName());
-    Result->SetStringField(TEXT("parent_class"), Blueprint->ParentClass ? Blueprint->ParentClass->GetName() : TEXT("None"));
-    Result->SetBoolField(TEXT("is_compiled"), !Blueprint->bBeingCompiled && Blueprint->GeneratedClass != nullptr);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("name"), Blueprint->GetName());
+        Result->SetStringField(TEXT("parent_class"), Blueprint->ParentClass ? Blueprint->ParentClass->GetName() : TEXT("None"));
+        Result->SetBoolField(TEXT("is_compiled"), !Blueprint->bBeingCompiled && Blueprint->GeneratedClass != nullptr);
 
-    TArray<TSharedPtr<FJsonValue>> Variables;
-    for (FBPVariableDescription& Var : Blueprint->NewVariables)
-    {
-        TSharedPtr<FJsonObject> VarObj = MakeShareable(new FJsonObject);
-        VarObj->SetStringField(TEXT("name"), Var.VarName.ToString());
-        VarObj->SetStringField(TEXT("type"), Var.VarType.PinCategory.ToString());
-        Variables.Add(MakeShareable(new FJsonValueObject(VarObj)));
-    }
-    Result->SetArrayField(TEXT("variables"), Variables);
+        TArray<TSharedPtr<FJsonValue>> Variables;
+        for (FBPVariableDescription& Var : Blueprint->NewVariables)
+        {
+            TSharedPtr<FJsonObject> VarObj = MakeShareable(new FJsonObject);
+            VarObj->SetStringField(TEXT("name"), Var.VarName.ToString());
+            VarObj->SetStringField(TEXT("type"), Var.VarType.PinCategory.ToString());
+            Variables.Add(MakeShareable(new FJsonValueObject(VarObj)));
+        }
+        Result->SetArrayField(TEXT("variables"), Variables);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -152,183 +200,208 @@ static UFunction* FindFunctionByName(const FString& FunctionName)
 
 FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params)
 {
+    // Extract params — JSON access is thread-safe
     FString Path = Params->GetStringField(TEXT("path"));
     FString NodeType = Params->GetStringField(TEXT("node_type"));
-
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
-
-    UEdGraph* TargetGraph = nullptr;
     FString GraphType = Params->HasField(TEXT("graph_type"))
         ? Params->GetStringField(TEXT("graph_type"))
         : TEXT("EventGraph");
-
-    if (GraphType == TEXT("EventGraph"))
-    {
-        if (Blueprint->UbergraphPages.Num() > 0)
-        {
-            TargetGraph = Blueprint->UbergraphPages[0];
-        }
-    }
-    else
-    {
-        for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-        {
-            if (Graph->GetName() == GraphType) { TargetGraph = Graph; break; }
-        }
-        if (!TargetGraph)
-        {
-            for (UEdGraph* Graph : Blueprint->UbergraphPages)
-            {
-                if (Graph->GetName() == GraphType) { TargetGraph = Graph; break; }
-            }
-        }
-    }
-
-    if (!TargetGraph)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Graph not found: %s\"}"), *GraphType);
-    }
-
-    UK2Node* NewNode = nullptr;
     int32 PosX = Params->HasField(TEXT("pos_x")) ? (int32)Params->GetNumberField(TEXT("pos_x")) : 0;
     int32 PosY = Params->HasField(TEXT("pos_y")) ? (int32)Params->GetNumberField(TEXT("pos_y")) : 0;
 
-    if (NodeType == TEXT("CallFunction"))
-    {
-        FString FunctionName = Params->GetStringField(TEXT("function_name"));
-        UFunction* Function = nullptr;
+    FString FunctionName = Params->HasField(TEXT("function_name")) ? Params->GetStringField(TEXT("function_name")) : TEXT("");
+    FString ClassName = Params->HasField(TEXT("class_name")) ? Params->GetStringField(TEXT("class_name")) : TEXT("");
+    FString EventName = Params->HasField(TEXT("event_name")) ? Params->GetStringField(TEXT("event_name")) : TEXT("");
+    FString VarName = Params->HasField(TEXT("variable_name")) ? Params->GetStringField(TEXT("variable_name")) : TEXT("");
 
-        if (Params->HasField(TEXT("class_name")))
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            UClass* Class = FindFirstObject<UClass>(*Params->GetStringField(TEXT("class_name")));
-            if (Class) { Function = Class->FindFunctionByName(*FunctionName); }
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        UEdGraph* TargetGraph = nullptr;
+        if (GraphType == TEXT("EventGraph"))
+        {
+            if (Blueprint->UbergraphPages.Num() > 0)
+                TargetGraph = Blueprint->UbergraphPages[0];
         }
         else
         {
-            Function = FindFunctionByName(FunctionName);
+            for (UEdGraph* G : Blueprint->FunctionGraphs)
+            {
+                if (G->GetName() == GraphType) { TargetGraph = G; break; }
+            }
+            if (!TargetGraph)
+            {
+                for (UEdGraph* G : Blueprint->UbergraphPages)
+                {
+                    if (G->GetName() == GraphType) { TargetGraph = G; break; }
+                }
+            }
         }
 
-        if (!Function)
+        if (!TargetGraph)
         {
-            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Function not found: %s\"}"), *FunctionName);
+            ErrorMsg = FString::Printf(TEXT("Graph not found: %s"), *GraphType);
+            DoneEvent->Trigger();
+            return;
         }
 
-        UK2Node_CallFunction* CallFuncNode = NewObject<UK2Node_CallFunction>(TargetGraph);
-        CallFuncNode->SetFromFunction(Function);
-        CallFuncNode->AllocateDefaultPins();
-        TargetGraph->AddNode(CallFuncNode);
-        NewNode = CallFuncNode;
-    }
-    else if (NodeType == TEXT("Event"))
-    {
-        FString EventName = Params->GetStringField(TEXT("event_name"));
-        UFunction* EventFunc = AActor::StaticClass()->FindFunctionByName(*EventName);
-        if (!EventFunc)
+        UK2Node* NewNode = nullptr;
+
+        if (NodeType == TEXT("CallFunction"))
         {
-            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Event not found: %s\"}"), *EventName);
+            UFunction* Function = nullptr;
+            if (!ClassName.IsEmpty())
+            {
+                if (UClass* Class = FindFirstObject<UClass>(*ClassName))
+                    Function = Class->FindFunctionByName(*FunctionName);
+            }
+            else
+            {
+                Function = FindFunctionByName(FunctionName);
+            }
+
+            if (!Function)
+            {
+                ErrorMsg = FString::Printf(TEXT("Function not found: %s"), *FunctionName);
+                DoneEvent->Trigger();
+                return;
+            }
+
+            UK2Node_CallFunction* CallFuncNode = NewObject<UK2Node_CallFunction>(TargetGraph);
+            CallFuncNode->SetFromFunction(Function);
+            CallFuncNode->AllocateDefaultPins();
+            TargetGraph->AddNode(CallFuncNode);
+            NewNode = CallFuncNode;
         }
-
-        UK2Node_Event* EventNode = NewObject<UK2Node_Event>(TargetGraph);
-        EventNode->EventReference.SetExternalMember(EventFunc->GetFName(), AActor::StaticClass());
-        EventNode->AllocateDefaultPins();
-        TargetGraph->AddNode(EventNode);
-        NewNode = EventNode;
-    }
-    else if (NodeType == TEXT("CustomEvent"))
-    {
-        FString EventName = Params->GetStringField(TEXT("event_name"));
-
-        UK2Node_CustomEvent* CustomEventNode = NewObject<UK2Node_CustomEvent>(TargetGraph);
-        CustomEventNode->CustomFunctionName = *EventName;
-        CustomEventNode->AllocateDefaultPins();
-        TargetGraph->AddNode(CustomEventNode);
-        NewNode = CustomEventNode;
-    }
-    else if (NodeType == TEXT("VariableGet") || NodeType == TEXT("VariableSet"))
-    {
-        FString VarName = Params->GetStringField(TEXT("variable_name"));
-
-        FBPVariableDescription* VarDesc = Blueprint->NewVariables.FindByPredicate(
-            [&VarName](const FBPVariableDescription& Var) { return Var.VarName == *VarName; });
-
-        if (!VarDesc)
+        else if (NodeType == TEXT("Event"))
         {
-            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Variable not found: %s\"}"), *VarName);
+            UFunction* EventFunc = AActor::StaticClass()->FindFunctionByName(*EventName);
+            if (!EventFunc)
+            {
+                ErrorMsg = FString::Printf(TEXT("Event not found: %s"), *EventName);
+                DoneEvent->Trigger();
+                return;
+            }
+
+            UK2Node_Event* EventNode = NewObject<UK2Node_Event>(TargetGraph);
+            EventNode->EventReference.SetExternalMember(EventFunc->GetFName(), AActor::StaticClass());
+            EventNode->AllocateDefaultPins();
+            TargetGraph->AddNode(EventNode);
+            NewNode = EventNode;
         }
-
-        if (NodeType == TEXT("VariableGet"))
+        else if (NodeType == TEXT("CustomEvent"))
         {
-            UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(TargetGraph);
-            GetNode->VariableReference.SetExternalMember(VarDesc->VarName, Blueprint->GeneratedClass);
-            GetNode->AllocateDefaultPins();
-            TargetGraph->AddNode(GetNode);
-            NewNode = GetNode;
+            UK2Node_CustomEvent* CustomEventNode = NewObject<UK2Node_CustomEvent>(TargetGraph);
+            CustomEventNode->CustomFunctionName = *EventName;
+            CustomEventNode->AllocateDefaultPins();
+            TargetGraph->AddNode(CustomEventNode);
+            NewNode = CustomEventNode;
+        }
+        else if (NodeType == TEXT("VariableGet") || NodeType == TEXT("VariableSet"))
+        {
+            FBPVariableDescription* VarDesc = Blueprint->NewVariables.FindByPredicate(
+                [&VarName](const FBPVariableDescription& Var) { return Var.VarName == *VarName; });
+
+            if (!VarDesc)
+            {
+                ErrorMsg = FString::Printf(TEXT("Variable not found: %s"), *VarName);
+                DoneEvent->Trigger();
+                return;
+            }
+
+            if (NodeType == TEXT("VariableGet"))
+            {
+                UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(TargetGraph);
+                GetNode->VariableReference.SetExternalMember(VarDesc->VarName, Blueprint->GeneratedClass);
+                GetNode->AllocateDefaultPins();
+                TargetGraph->AddNode(GetNode);
+                NewNode = GetNode;
+            }
+            else
+            {
+                UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(TargetGraph);
+                SetNode->VariableReference.SetExternalMember(VarDesc->VarName, Blueprint->GeneratedClass);
+                SetNode->AllocateDefaultPins();
+                TargetGraph->AddNode(SetNode);
+                NewNode = SetNode;
+            }
+        }
+        else if (NodeType == TEXT("PrintString"))
+        {
+            UFunction* PrintFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("PrintString"));
+            if (!PrintFunc)
+            {
+                ErrorMsg = TEXT("PrintString function not found");
+                DoneEvent->Trigger();
+                return;
+            }
+
+            UK2Node_CallFunction* CallFuncNode = NewObject<UK2Node_CallFunction>(TargetGraph);
+            CallFuncNode->SetFromFunction(PrintFunc);
+            CallFuncNode->AllocateDefaultPins();
+            TargetGraph->AddNode(CallFuncNode);
+            NewNode = CallFuncNode;
         }
         else
         {
-            UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(TargetGraph);
-            SetNode->VariableReference.SetExternalMember(VarDesc->VarName, Blueprint->GeneratedClass);
-            SetNode->AllocateDefaultPins();
-            TargetGraph->AddNode(SetNode);
-            NewNode = SetNode;
+            ErrorMsg = FString::Printf(TEXT("Unknown node type: %s"), *NodeType);
+            DoneEvent->Trigger();
+            return;
         }
-    }
-    else if (NodeType == TEXT("PrintString"))
-    {
-        UFunction* PrintFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("PrintString"));
-        if (!PrintFunc)
+
+        NewNode->NodePosX = PosX;
+        NewNode->NodePosY = PosY;
+
+        TArray<TSharedPtr<FJsonValue>> Pins;
+        for (UEdGraphPin* Pin : NewNode->GetAllPins())
         {
-            return TEXT("{\"success\":false,\"error\":\"PrintString function not found\"}");
+            if (Pin)
+            {
+                TSharedPtr<FJsonObject> PinObj = MakeShareable(new FJsonObject);
+                PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+                PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Output ? TEXT("output") : TEXT("input"));
+                PinObj->SetStringField(TEXT("category"), Pin->PinType.PinCategory.ToString());
+                Pins.Add(MakeShareable(new FJsonValueObject(PinObj)));
+            }
         }
 
-        UK2Node_CallFunction* CallFuncNode = NewObject<UK2Node_CallFunction>(TargetGraph);
-        CallFuncNode->SetFromFunction(PrintFunc);
-        CallFuncNode->AllocateDefaultPins();
-        TargetGraph->AddNode(CallFuncNode);
-        NewNode = CallFuncNode;
-    }
-    else
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Unknown node type: %s\"}"), *NodeType);
-    }
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
-    NewNode->NodePosX = PosX;
-    NewNode->NodePosY = PosY;
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("node_id"), NewNode->NodeGuid.ToString());
+        Result->SetStringField(TEXT("node_type"), NodeType);
+        Result->SetStringField(TEXT("graph"), GraphType);
+        Result->SetNumberField(TEXT("pos_x"), PosX);
+        Result->SetNumberField(TEXT("pos_y"), PosY);
+        Result->SetArrayField(TEXT("pins"), Pins);
 
-    TArray<TSharedPtr<FJsonValue>> Pins;
-    for (UEdGraphPin* Pin : NewNode->GetAllPins())
-    {
-        if (Pin)
-        {
-            TSharedPtr<FJsonObject> PinObj = MakeShareable(new FJsonObject);
-            PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
-            PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Output ? TEXT("output") : TEXT("input"));
-            PinObj->SetStringField(TEXT("category"), Pin->PinType.PinCategory.ToString());
-            Pins.Add(MakeShareable(new FJsonValueObject(PinObj)));
-        }
-    }
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
 
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        DoneEvent->Trigger();
+    });
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("node_id"), NewNode->NodeGuid.ToString());
-    Result->SetStringField(TEXT("node_type"), NodeType);
-    Result->SetStringField(TEXT("graph"), GraphType);
-    Result->SetNumberField(TEXT("pos_x"), PosX);
-    Result->SetNumberField(TEXT("pos_y"), PosY);
-    Result->SetArrayField(TEXT("pins"), Pins);
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -340,73 +413,97 @@ FString HandleConnectBlueprintPins(const TSharedPtr<FJsonObject>& Params)
     FString TargetNodeId = Params->GetStringField(TEXT("target_node_id"));
     FString TargetPinName = Params->GetStringField(TEXT("target_pin"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    auto FindNodeById = [](UEdGraph* Graph, const FString& NodeId) -> UEdGraphNode*
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        for (UEdGraphNode* Node : Graph->Nodes)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            if (Node && Node->NodeGuid.ToString() == NodeId) return Node;
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
         }
-        return nullptr;
-    };
 
-    UEdGraphNode* SourceNode = nullptr;
-    UEdGraphNode* TargetNode = nullptr;
+        auto FindNodeById = [](UEdGraph* Graph, const FString& NodeId) -> UEdGraphNode*
+        {
+            for (UEdGraphNode* Node : Graph->Nodes)
+            {
+                if (Node && Node->NodeGuid.ToString() == NodeId) return Node;
+            }
+            return nullptr;
+        };
 
-    for (UEdGraph* Graph : Blueprint->UbergraphPages)
-    {
-        if (!SourceNode) SourceNode = FindNodeById(Graph, SourceNodeId);
-        if (!TargetNode) TargetNode = FindNodeById(Graph, TargetNodeId);
-    }
-    for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-    {
-        if (!SourceNode) SourceNode = FindNodeById(Graph, SourceNodeId);
-        if (!TargetNode) TargetNode = FindNodeById(Graph, TargetNodeId);
-    }
+        UEdGraphNode* SourceNode = nullptr;
+        UEdGraphNode* TargetNode = nullptr;
 
-    if (!SourceNode)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Source node not found: %s\"}"), *SourceNodeId);
-    }
-    if (!TargetNode)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Target node not found: %s\"}"), *TargetNodeId);
-    }
+        for (UEdGraph* Graph : Blueprint->UbergraphPages)
+        {
+            if (!SourceNode) SourceNode = FindNodeById(Graph, SourceNodeId);
+            if (!TargetNode) TargetNode = FindNodeById(Graph, TargetNodeId);
+        }
+        for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+        {
+            if (!SourceNode) SourceNode = FindNodeById(Graph, SourceNodeId);
+            if (!TargetNode) TargetNode = FindNodeById(Graph, TargetNodeId);
+        }
 
-    UEdGraphPin* SourcePin = SourceNode->FindPin(*SourcePinName, EGPD_Output);
-    UEdGraphPin* TargetPin = TargetNode->FindPin(*TargetPinName, EGPD_Input);
+        if (!SourceNode)
+        {
+            ErrorMsg = FString::Printf(TEXT("Source node not found: %s"), *SourceNodeId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!TargetNode)
+        {
+            ErrorMsg = FString::Printf(TEXT("Target node not found: %s"), *TargetNodeId);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    if (!SourcePin)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Source pin not found: %s on node %s\"}"), *SourcePinName, *SourceNodeId);
-    }
-    if (!TargetPin)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Target pin not found: %s on node %s\"}"), *TargetPinName, *TargetNodeId);
-    }
+        UEdGraphPin* SourcePin = SourceNode->FindPin(*SourcePinName, EGPD_Output);
+        UEdGraphPin* TargetPin = TargetNode->FindPin(*TargetPinName, EGPD_Input);
 
-    SourcePin->MakeLinkTo(TargetPin);
+        if (!SourcePin)
+        {
+            ErrorMsg = FString::Printf(TEXT("Source pin not found: %s on node %s"), *SourcePinName, *SourceNodeId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!TargetPin)
+        {
+            ErrorMsg = FString::Printf(TEXT("Target pin not found: %s on node %s"), *TargetPinName, *TargetNodeId);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        SourcePin->MakeLinkTo(TargetPin);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("source_node"), SourceNodeId);
-    Result->SetStringField(TEXT("source_pin"), SourcePinName);
-    Result->SetStringField(TEXT("target_node"), TargetNodeId);
-    Result->SetStringField(TEXT("target_pin"), TargetPinName);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("source_node"), SourceNodeId);
+        Result->SetStringField(TEXT("source_pin"), SourcePinName);
+        Result->SetStringField(TEXT("target_node"), TargetNodeId);
+        Result->SetStringField(TEXT("target_pin"), TargetPinName);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -417,97 +514,112 @@ FString HandleGetBlueprintGraph(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("graph_type"))
         : TEXT("EventGraph");
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    UEdGraph* TargetGraph = nullptr;
-    if (GraphType == TEXT("EventGraph"))
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (Blueprint->UbergraphPages.Num() > 0)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            TargetGraph = Blueprint->UbergraphPages[0];
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
         }
-    }
-    else
-    {
-        for (UEdGraph* Graph : Blueprint->UbergraphPages)
+
+        UEdGraph* TargetGraph = nullptr;
+        if (GraphType == TEXT("EventGraph"))
         {
-            if (Graph->GetName() == GraphType) { TargetGraph = Graph; break; }
+            if (Blueprint->UbergraphPages.Num() > 0)
+                TargetGraph = Blueprint->UbergraphPages[0];
         }
-        if (!TargetGraph)
+        else
         {
-            for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+            for (UEdGraph* Graph : Blueprint->UbergraphPages)
             {
                 if (Graph->GetName() == GraphType) { TargetGraph = Graph; break; }
             }
-        }
-    }
-
-    if (!TargetGraph)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Graph not found: %s\"}"), *GraphType);
-    }
-
-    TArray<TSharedPtr<FJsonValue>> Nodes;
-    for (UEdGraphNode* Node : TargetGraph->Nodes)
-    {
-        if (!Node) continue;
-
-        TSharedPtr<FJsonObject> NodeObj = MakeShareable(new FJsonObject);
-        NodeObj->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
-        NodeObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
-        NodeObj->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
-        NodeObj->SetNumberField(TEXT("pos_x"), Node->NodePosX);
-        NodeObj->SetNumberField(TEXT("pos_y"), Node->NodePosY);
-
-        TArray<TSharedPtr<FJsonValue>> Pins;
-        for (UEdGraphPin* Pin : Node->GetAllPins())
-        {
-            if (!Pin || Pin->bHidden) continue;
-
-            TSharedPtr<FJsonObject> PinObj = MakeShareable(new FJsonObject);
-            PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
-            PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Output ? TEXT("output") : TEXT("input"));
-            PinObj->SetStringField(TEXT("category"), Pin->PinType.PinCategory.ToString());
-
-            TArray<TSharedPtr<FJsonValue>> Connections;
-            for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+            if (!TargetGraph)
             {
-                if (LinkedPin && LinkedPin->GetOwningNode())
+                for (UEdGraph* Graph : Blueprint->FunctionGraphs)
                 {
-                    TSharedPtr<FJsonObject> LinkObj = MakeShareable(new FJsonObject);
-                    LinkObj->SetStringField(TEXT("node_id"), LinkedPin->GetOwningNode()->NodeGuid.ToString());
-                    LinkObj->SetStringField(TEXT("pin"), LinkedPin->PinName.ToString());
-                    Connections.Add(MakeShareable(new FJsonValueObject(LinkObj)));
+                    if (Graph->GetName() == GraphType) { TargetGraph = Graph; break; }
                 }
             }
-            if (Connections.Num() > 0)
-            {
-                PinObj->SetArrayField(TEXT("connected_to"), Connections);
-            }
-
-            Pins.Add(MakeShareable(new FJsonValueObject(PinObj)));
         }
-        NodeObj->SetArrayField(TEXT("pins"), Pins);
-        Nodes.Add(MakeShareable(new FJsonValueObject(NodeObj)));
-    }
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("graph_name"), TargetGraph->GetName());
-    Result->SetStringField(TEXT("graph_type"), GraphType);
-    Result->SetNumberField(TEXT("node_count"), Nodes.Num());
-    Result->SetArrayField(TEXT("nodes"), Nodes);
+        if (!TargetGraph)
+        {
+            ErrorMsg = FString::Printf(TEXT("Graph not found: %s"), *GraphType);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        TArray<TSharedPtr<FJsonValue>> Nodes;
+        for (UEdGraphNode* Node : TargetGraph->Nodes)
+        {
+            if (!Node) continue;
+
+            TSharedPtr<FJsonObject> NodeObj = MakeShareable(new FJsonObject);
+            NodeObj->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
+            NodeObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+            NodeObj->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+            NodeObj->SetNumberField(TEXT("pos_x"), Node->NodePosX);
+            NodeObj->SetNumberField(TEXT("pos_y"), Node->NodePosY);
+
+            TArray<TSharedPtr<FJsonValue>> Pins;
+            for (UEdGraphPin* Pin : Node->GetAllPins())
+            {
+                if (!Pin || Pin->bHidden) continue;
+
+                TSharedPtr<FJsonObject> PinObj = MakeShareable(new FJsonObject);
+                PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+                PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Output ? TEXT("output") : TEXT("input"));
+                PinObj->SetStringField(TEXT("category"), Pin->PinType.PinCategory.ToString());
+
+                TArray<TSharedPtr<FJsonValue>> Connections;
+                for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+                {
+                    if (LinkedPin && LinkedPin->GetOwningNode())
+                    {
+                        TSharedPtr<FJsonObject> LinkObj = MakeShareable(new FJsonObject);
+                        LinkObj->SetStringField(TEXT("node_id"), LinkedPin->GetOwningNode()->NodeGuid.ToString());
+                        LinkObj->SetStringField(TEXT("pin"), LinkedPin->PinName.ToString());
+                        Connections.Add(MakeShareable(new FJsonValueObject(LinkObj)));
+                    }
+                }
+                if (Connections.Num() > 0)
+                    PinObj->SetArrayField(TEXT("connected_to"), Connections);
+
+                Pins.Add(MakeShareable(new FJsonValueObject(PinObj)));
+            }
+            NodeObj->SetArrayField(TEXT("pins"), Pins);
+            Nodes.Add(MakeShareable(new FJsonValueObject(NodeObj)));
+        }
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("graph_name"), TargetGraph->GetName());
+        Result->SetStringField(TEXT("graph_type"), GraphType);
+        Result->SetNumberField(TEXT("node_count"), Nodes.Num());
+        Result->SetArrayField(TEXT("nodes"), Nodes);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -601,48 +713,67 @@ FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params)
     FString VarType = Params->GetStringField(TEXT("variable_type"));
     bool bIsArray = Params->HasField(TEXT("is_array")) && Params->GetBoolField(TEXT("is_array"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (Var.VarName == *VarName)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            return FString::Printf(TEXT("{\"success\":false,\"error\":\"Variable already exists: %s\"}"), *VarName);
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
         }
-    }
 
-    FBPVariableDescription NewVar;
-    NewVar.VarName = *VarName;
+        for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+        {
+            if (Var.VarName == *VarName)
+            {
+                ErrorMsg = FString::Printf(TEXT("Variable already exists: %s"), *VarName);
+                DoneEvent->Trigger();
+                return;
+            }
+        }
 
-    if (!ParsePinType(VarType, NewVar.VarType))
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Unsupported variable type: %s\"}"), *VarType);
-    }
+        FBPVariableDescription NewVar;
+        NewVar.VarName = *VarName;
 
-    NewVar.VarType.ContainerType = bIsArray ? EPinContainerType::Array : EPinContainerType::None;
-    NewVar.DefaultValue = TEXT("");
+        if (!ParsePinType(VarType, NewVar.VarType))
+        {
+            ErrorMsg = FString::Printf(TEXT("Unsupported variable type: %s"), *VarType);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    Blueprint->NewVariables.Add(NewVar);
-    Blueprint->bIsNewlyCreated = false;
+        NewVar.VarType.ContainerType = bIsArray ? EPinContainerType::Array : EPinContainerType::None;
+        NewVar.DefaultValue = TEXT("");
+        Blueprint->NewVariables.Add(NewVar);
+        Blueprint->bIsNewlyCreated = false;
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("variable_name"), VarName);
+        Result->SetStringField(TEXT("variable_type"), VarType);
+        Result->SetBoolField(TEXT("is_array"), bIsArray);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("variable_name"), VarName);
-    Result->SetStringField(TEXT("variable_type"), VarType);
-    Result->SetBoolField(TEXT("is_array"), bIsArray);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -651,32 +782,51 @@ FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params)
     FString Path = Params->GetStringField(TEXT("path"));
     FString VarName = Params->GetStringField(TEXT("variable_name"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
+        {
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    int32 RemoveCount = Blueprint->NewVariables.RemoveAll(
-        [&VarName](const FBPVariableDescription& Var) { return Var.VarName == *VarName; });
+        int32 RemoveCount = Blueprint->NewVariables.RemoveAll(
+            [&VarName](const FBPVariableDescription& Var) { return Var.VarName == *VarName; });
 
-    if (RemoveCount == 0)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Variable not found: %s\"}"), *VarName);
-    }
+        if (RemoveCount == 0)
+        {
+            ErrorMsg = FString::Printf(TEXT("Variable not found: %s"), *VarName);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("variable_name"), VarName);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("variable_name"), VarName);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -719,59 +869,78 @@ FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params
         ? Params->GetStringField(TEXT("category"))
         : TEXT("");
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
-
-    // Check for existing graph with same name
-    if (FindGraph(Blueprint, FunctionName))
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Function already exists: %s\"}"), *FunctionName);
-    }
-
-    UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(
-        Blueprint, FName(*FunctionName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
-
-    if (!NewGraph)
-    {
-        return TEXT("{\"success\":false,\"error\":\"Failed to create function graph\"}");
-    }
-
-    FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, true, (UFunction*)nullptr);
-
-    // Set function category if provided
-    if (!Category.IsEmpty())
-    {
-        NewGraph->GetSchema()->CreateDefaultNodesForGraph(*NewGraph);
-        for (UEdGraphNode* Node : NewGraph->Nodes)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        if (FindGraph(Blueprint, FunctionName))
+        {
+            ErrorMsg = FString::Printf(TEXT("Function already exists: %s"), *FunctionName);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(
+            Blueprint, FName(*FunctionName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+
+        if (!NewGraph)
+        {
+            ErrorMsg = TEXT("Failed to create function graph");
+            DoneEvent->Trigger();
+            return;
+        }
+
+        FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, true, (UFunction*)nullptr);
+
+        if (!Category.IsEmpty())
+        {
+            NewGraph->GetSchema()->CreateDefaultNodesForGraph(*NewGraph);
+            for (UEdGraphNode* Node : NewGraph->Nodes)
             {
-                Entry->MetaData.Category = FText::FromString(Category);
-                break;
+                if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+                {
+                    Entry->MetaData.Category = FText::FromString(Category);
+                    break;
+                }
             }
         }
-    }
 
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
-    FString EntryId = GetEntryNodeId(NewGraph);
+        FString EntryId = GetEntryNodeId(NewGraph);
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("graph_name"), FunctionName);
-    Result->SetStringField(TEXT("function_name"), FunctionName);
-    Result->SetStringField(TEXT("entry_node_id"), EntryId);
-    Result->SetNumberField(TEXT("node_count"), NewGraph->Nodes.Num());
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("graph_name"), FunctionName);
+        Result->SetStringField(TEXT("function_name"), FunctionName);
+        Result->SetStringField(TEXT("entry_node_id"), EntryId);
+        Result->SetNumberField(TEXT("node_count"), NewGraph->Nodes.Num());
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -779,62 +948,70 @@ FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params)
 {
     FString Path = Params->GetStringField(TEXT("path"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
-
-    TArray<TSharedPtr<FJsonValue>> Graphs;
-
-    auto AddGraph = [&Graphs](UEdGraph* Graph, const FString& Type)
-    {
-        TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
-        Obj->SetStringField(TEXT("name"), Graph->GetName());
-        Obj->SetStringField(TEXT("type"), Type);
-        Obj->SetNumberField(TEXT("node_count"), Graph->Nodes.Num());
-
-        FString EntryId;
-        for (UEdGraphNode* Node : Graph->Nodes)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            if (Cast<UK2Node_FunctionEntry>(Node))
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        TArray<TSharedPtr<FJsonValue>> Graphs;
+        auto AddGraph = [&Graphs](UEdGraph* Graph, const FString& Type)
+        {
+            TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+            Obj->SetStringField(TEXT("name"), Graph->GetName());
+            Obj->SetStringField(TEXT("type"), Type);
+            Obj->SetNumberField(TEXT("node_count"), Graph->Nodes.Num());
+
+            FString EntryId;
+            for (UEdGraphNode* Node : Graph->Nodes)
             {
-                EntryId = Node->NodeGuid.ToString();
-                break;
+                if (Cast<UK2Node_FunctionEntry>(Node))
+                {
+                    EntryId = Node->NodeGuid.ToString();
+                    break;
+                }
             }
-        }
-        if (!EntryId.IsEmpty())
-        {
-            Obj->SetStringField(TEXT("entry_node_id"), EntryId);
-        }
+            if (!EntryId.IsEmpty())
+                Obj->SetStringField(TEXT("entry_node_id"), EntryId);
 
-        Graphs.Add(MakeShareable(new FJsonValueObject(Obj)));
-    };
+            Graphs.Add(MakeShareable(new FJsonValueObject(Obj)));
+        };
 
-    for (UEdGraph* Graph : Blueprint->UbergraphPages)
-    {
-        AddGraph(Graph, TEXT("EventGraph"));
-    }
-    for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-    {
-        AddGraph(Graph, TEXT("FunctionGraph"));
-    }
-    for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs)
-    {
-        AddGraph(Graph, TEXT("DelegateSignature"));
-    }
+        for (UEdGraph* Graph : Blueprint->UbergraphPages)
+            AddGraph(Graph, TEXT("EventGraph"));
+        for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+            AddGraph(Graph, TEXT("FunctionGraph"));
+        for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs)
+            AddGraph(Graph, TEXT("DelegateSignature"));
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetNumberField(TEXT("count"), Graphs.Num());
-    Result->SetArrayField(TEXT("graphs"), Graphs);
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetNumberField(TEXT("count"), Graphs.Num());
+        Result->SetArrayField(TEXT("graphs"), Graphs);
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
 
@@ -843,40 +1020,60 @@ FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params)
     FString Path = Params->GetStringField(TEXT("path"));
     FString GraphName = Params->GetStringField(TEXT("graph_name"));
 
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
-    if (!Blueprint)
-    {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Blueprint not found: %s\"}"), *Path);
-    }
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    UEdGraph* Graph = FindGraph(Blueprint, GraphName);
-    if (!Graph)
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Graph not found: %s\"}"), *GraphName);
-    }
-
-    // Refuse to delete EventGraph
-    for (UEdGraph* EventGraph : Blueprint->UbergraphPages)
-    {
-        if (EventGraph == Graph)
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
         {
-            return TEXT("{\"success\":false,\"error\":\"Cannot delete the EventGraph\"}");
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
         }
-    }
 
-    FBlueprintEditorUtils::RemoveGraph(Blueprint, Graph, EGraphRemoveFlags::Recompile);
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+        UEdGraph* Graph = FindGraph(Blueprint, GraphName);
+        if (!Graph)
+        {
+            ErrorMsg = FString::Printf(TEXT("Graph not found: %s"), *GraphName);
+            DoneEvent->Trigger();
+            return;
+        }
 
-    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("graph_name"), GraphName);
-    Result->SetBoolField(TEXT("deleted"), true);
+        for (UEdGraph* EventGraph : Blueprint->UbergraphPages)
+        {
+            if (EventGraph == Graph)
+            {
+                ErrorMsg = TEXT("Cannot delete the EventGraph");
+                DoneEvent->Trigger();
+                return;
+            }
+        }
 
-    TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
-    Response->SetBoolField(TEXT("success"), true);
-    Response->SetObjectField(TEXT("result"), Result);
+        FBlueprintEditorUtils::RemoveGraph(Blueprint, Graph, EGraphRemoveFlags::Recompile);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("graph_name"), GraphName);
+        Result->SetBoolField(TEXT("deleted"), true);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     FString Out;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
-    FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }

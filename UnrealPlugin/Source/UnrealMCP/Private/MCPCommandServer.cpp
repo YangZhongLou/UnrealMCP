@@ -191,13 +191,13 @@ void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
     while (bRunning)
     {
         int32 BytesRead = 0;
-        if (!ClientSocket->Recv(Buffer.GetData(), Buffer.Num(), BytesRead))
+        if (!ClientSocket->Recv(Buffer.GetData(), Buffer.Num(), BytesRead) || BytesRead == 0)
         {
             break;
         }
 
-        if (BytesRead > 0)
         {
+            // BytesRead > 0 guaranteed here
             FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buffer.GetData())));
             RequestStr = RequestStr.Left(BytesRead);
 

@@ -4,3 +4,6 @@
 MCP_Server/target/
 UnrealPlugin/Build/
 UnrealPlugin/Config/
+UnrealPlugin/Binaries/
+UnrealPlugin/Intermediate/
+ue_editor.log
