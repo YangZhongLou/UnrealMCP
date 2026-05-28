@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "UnrealMCP",
+	"Description": "Model Context Protocol integration for Unreal Engine",
+	"Category": "AI",
+	"CreatedBy": "UnrealMCP Team",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "UnrealMCP",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

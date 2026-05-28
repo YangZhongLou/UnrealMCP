@@ -1,0 +1,483 @@
+#include "MCPCommandServer.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogMCPCommandServer, Log, All);
+
+// Forward declarations from command files
+FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetActorTransform(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetActorList(const TSharedPtr<FJsonObject>& Params);
+FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params);
+FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params);
+FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetBlueprintInfo(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetAssetInfo(const TSharedPtr<FJsonObject>& Params);
+FString HandleDeleteAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleRenameAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetActorProperty(const TSharedPtr<FJsonObject>& Params);
+FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetActorComponents(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddComponent(const TSharedPtr<FJsonObject>& Params);
+FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params);
+FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetSelectedActors(const TSharedPtr<FJsonObject>& Params);
+FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetMaterial(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params);
+FString HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params);
+FString HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSimulateKey(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetLightParameters(const TSharedPtr<FJsonObject>& Params);
+FString HandleSpawnEffect(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetViewMode(const TSharedPtr<FJsonObject>& Params);
+FString HandleShowDebug(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params);
+FString HandleConnectBlueprintPins(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleAddBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
+FString HandleRemoveBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
+FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetLogs(const TSharedPtr<FJsonObject>& Params);
+FString HandleExecuteEditorCommand(const TSharedPtr<FJsonObject>& Params);
+FString HandleFocusEditorPanel(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
+FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params);
+
+FMCPCommandServer::FMCPCommandServer()
+    : Thread(nullptr)
+    , ListenSocket(nullptr)
+    , bRunning(false)
+    , ServerPort(13377)
+{
+}
+
+FMCPCommandServer::~FMCPCommandServer()
+{
+    StopServer();
+}
+
+bool FMCPCommandServer::StartServer(int32 Port)
+{
+    ServerPort = Port;
+    bRunning = true;
+
+    Thread = FRunnableThread::Create(this, TEXT("MCPCommandServerThread"), 0, TPri_Normal);
+    return Thread != nullptr;
+}
+
+void FMCPCommandServer::StopServer()
+{
+    bRunning = false;
+
+    if (ListenSocket)
+    {
+        ListenSocket->Close();
+    }
+
+    if (Thread)
+    {
+        Thread->Kill(true);
+        delete Thread;
+        Thread = nullptr;
+    }
+
+    if (ListenSocket)
+    {
+        ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ListenSocket);
+        ListenSocket = nullptr;
+    }
+}
+
+bool FMCPCommandServer::Init()
+{
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    ListenSocket = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("MCPListenSocket"), false);
+
+    if (!ListenSocket)
+    {
+        UE_LOG(LogMCPCommandServer, Error, TEXT("Failed to create listen socket"));
+        return false;
+    }
+
+    ListenAddr = SocketSubsystem->CreateInternetAddr();
+    ListenAddr->SetLoopbackAddress();
+    ListenAddr->SetPort(ServerPort);
+
+    ListenSocket->SetReuseAddr(true);
+    ListenSocket->SetNonBlocking(false);
+
+    if (!ListenSocket->Bind(*ListenAddr))
+    {
+        UE_LOG(LogMCPCommandServer, Error, TEXT("Failed to bind socket to port %d"), ServerPort);
+        return false;
+    }
+
+    if (!ListenSocket->Listen(4))
+    {
+        UE_LOG(LogMCPCommandServer, Error, TEXT("Failed to listen on socket"));
+        return false;
+    }
+
+    UE_LOG(LogMCPCommandServer, Log, TEXT("Server listening on port %d"), ServerPort);
+    return true;
+}
+
+uint32 FMCPCommandServer::Run()
+{
+    while (bRunning)
+    {
+        if (!ListenSocket)
+        {
+            FPlatformProcess::Sleep(0.1f);
+            continue;
+        }
+
+        bool bHasPendingConnection = false;
+        ListenSocket->HasPendingConnection(bHasPendingConnection);
+
+        if (bHasPendingConnection)
+        {
+            FSocket* ClientSocket = ListenSocket->Accept(TEXT("MCPClientSocket"));
+            if (ClientSocket)
+            {
+                UE_LOG(LogMCPCommandServer, Log, TEXT("Client connected"));
+                HandleClientConnection(ClientSocket);
+                ClientSocket->Close();
+                ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ClientSocket);
+                UE_LOG(LogMCPCommandServer, Log, TEXT("Client disconnected"));
+            }
+        }
+
+        FPlatformProcess::Sleep(0.01f);
+    }
+
+    return 0;
+}
+
+void FMCPCommandServer::Stop()
+{
+    bRunning = false;
+}
+
+void FMCPCommandServer::Exit()
+{
+}
+
+void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
+{
+    TArray<uint8> Buffer;
+    Buffer.SetNumUninitialized(65536);
+
+    while (bRunning)
+    {
+        int32 BytesRead = 0;
+        if (!ClientSocket->Recv(Buffer.GetData(), Buffer.Num(), BytesRead) || BytesRead == 0)
+        {
+            break;
+        }
+
+        {
+            // BytesRead > 0 guaranteed here
+            FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buffer.GetData())));
+            RequestStr = RequestStr.Left(BytesRead);
+
+            UE_LOG(LogMCPCommandServer, Log, TEXT("Received: %s"), *RequestStr);
+
+            FString ResponseStr = ProcessCommand(RequestStr);
+
+            FTCHARToUTF8 UTF8Response(*ResponseStr);
+            int32 BytesSent = 0;
+            ClientSocket->Send((const uint8*)UTF8Response.Get(), UTF8Response.Length(), BytesSent);
+        }
+
+        FPlatformProcess::Sleep(0.001f);
+    }
+}
+
+FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
+{
+    TSharedPtr<FJsonObject> RequestObject;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonRequest);
+
+    if (!FJsonSerializer::Deserialize(Reader, RequestObject) || !RequestObject.IsValid())
+    {
+        return TEXT("{\"success\":false,\"error\":\"Invalid JSON\"}");
+    }
+
+    FString Method = RequestObject->GetStringField(TEXT("method"));
+    TSharedPtr<FJsonObject> Params = RequestObject->GetObjectField(TEXT("params"));
+    FString RequestId = RequestObject->GetStringField(TEXT("id"));
+
+    FString ResultStr;
+
+    if (Method == TEXT("get_editor_info"))
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+        Result->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+
+        TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+        Response->SetStringField(TEXT("id"), RequestId);
+        Response->SetBoolField(TEXT("success"), true);
+        Response->SetObjectField(TEXT("result"), Result);
+
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    }
+    else if (Method == TEXT("spawn_actor"))
+    {
+        ResultStr = HandleSpawnActor(Params);
+    }
+    else if (Method == TEXT("destroy_actor"))
+    {
+        ResultStr = HandleDestroyActor(Params);
+    }
+    else if (Method == TEXT("set_actor_transform"))
+    {
+        ResultStr = HandleSetActorTransform(Params);
+    }
+    else if (Method == TEXT("get_actor_list"))
+    {
+        ResultStr = HandleGetActorList(Params);
+    }
+    else if (Method == TEXT("run_console_command"))
+    {
+        ResultStr = HandleRunConsoleCommand(Params);
+    }
+    else if (Method == TEXT("save_current_level"))
+    {
+        ResultStr = HandleSaveCurrentLevel(Params);
+    }
+    else if (Method == TEXT("create_level"))
+    {
+        ResultStr = HandleCreateLevel(Params);
+    }
+    else if (Method == TEXT("play_in_editor"))
+    {
+        ResultStr = HandlePlayInEditor(Params);
+    }
+    else if (Method == TEXT("stop_play_in_editor"))
+    {
+        ResultStr = HandleStopPlayInEditor(Params);
+    }
+    else if (Method == TEXT("create_blueprint"))
+    {
+        ResultStr = HandleCreateBlueprint(Params);
+    }
+    else if (Method == TEXT("compile_blueprint"))
+    {
+        ResultStr = HandleCompileBlueprint(Params);
+    }
+    else if (Method == TEXT("get_blueprint_info"))
+    {
+        ResultStr = HandleGetBlueprintInfo(Params);
+    }
+    else if (Method == TEXT("get_asset_list"))
+    {
+        ResultStr = HandleGetAssetList(Params);
+    }
+    else if (Method == TEXT("get_asset_info"))
+    {
+        ResultStr = HandleGetAssetInfo(Params);
+    }
+    else if (Method == TEXT("delete_asset"))
+    {
+        ResultStr = HandleDeleteAsset(Params);
+    }
+    else if (Method == TEXT("rename_asset"))
+    {
+        ResultStr = HandleRenameAsset(Params);
+    }
+    else if (Method == TEXT("set_actor_property"))
+    {
+        ResultStr = HandleSetActorProperty(Params);
+    }
+    else if (Method == TEXT("get_actor_property"))
+    {
+        ResultStr = HandleGetActorProperty(Params);
+    }
+    else if (Method == TEXT("duplicate_actor"))
+    {
+        ResultStr = HandleDuplicateActor(Params);
+    }
+    else if (Method == TEXT("open_level"))
+    {
+        ResultStr = HandleOpenLevel(Params);
+    }
+    else if (Method == TEXT("take_screenshot"))
+    {
+        ResultStr = HandleTakeScreenshot(Params);
+    }
+    else if (Method == TEXT("generate_cpp_class"))
+    {
+        ResultStr = HandleGenerateCppClass(Params);
+    }
+    else if (Method == TEXT("get_current_level"))
+    {
+        ResultStr = HandleGetCurrentLevel(Params);
+    }
+    else if (Method == TEXT("get_actor_components"))
+    {
+        ResultStr = HandleGetActorComponents(Params);
+    }
+    else if (Method == TEXT("add_component"))
+    {
+        ResultStr = HandleAddComponent(Params);
+    }
+    else if (Method == TEXT("remove_component"))
+    {
+        ResultStr = HandleRemoveComponent(Params);
+    }
+    else if (Method == TEXT("focus_viewport"))
+    {
+        ResultStr = HandleFocusViewport(Params);
+    }
+    else if (Method == TEXT("get_selected_actors"))
+    {
+        ResultStr = HandleGetSelectedActors(Params);
+    }
+    else if (Method == TEXT("select_actor"))
+    {
+        ResultStr = HandleSelectActor(Params);
+    }
+    else if (Method == TEXT("set_static_mesh"))
+    {
+        ResultStr = HandleSetStaticMesh(Params);
+    }
+    else if (Method == TEXT("set_material"))
+    {
+        ResultStr = HandleSetMaterial(Params);
+    }
+    else if (Method == TEXT("create_material_instance"))
+    {
+        ResultStr = HandleCreateMaterialInstance(Params);
+    }
+    else if (Method == TEXT("set_material_parameter"))
+    {
+        ResultStr = HandleSetMaterialParameter(Params);
+    }
+    else if (Method == TEXT("find_actors_by_class"))
+    {
+        ResultStr = HandleFindActorsByClass(Params);
+    }
+    else if (Method == TEXT("spawn_blueprint_actor"))
+    {
+        ResultStr = HandleSpawnBlueprintActor(Params);
+    }
+    else if (Method == TEXT("simulate_key"))
+    {
+        ResultStr = HandleSimulateKey(Params);
+    }
+    else if (Method == TEXT("get_viewport_camera"))
+    {
+        ResultStr = HandleGetViewportCamera(Params);
+    }
+    else if (Method == TEXT("set_light_parameters"))
+    {
+        ResultStr = HandleSetLightParameters(Params);
+    }
+    else if (Method == TEXT("spawn_effect"))
+    {
+        ResultStr = HandleSpawnEffect(Params);
+    }
+    else if (Method == TEXT("add_actor_tag"))
+    {
+        ResultStr = HandleAddActorTag(Params);
+    }
+    else if (Method == TEXT("set_view_mode"))
+    {
+        ResultStr = HandleSetViewMode(Params);
+    }
+    else if (Method == TEXT("show_debug"))
+    {
+        ResultStr = HandleShowDebug(Params);
+    }
+    else if (Method == TEXT("add_blueprint_node"))
+    {
+        ResultStr = HandleAddBlueprintNode(Params);
+    }
+    else if (Method == TEXT("connect_blueprint_pins"))
+    {
+        ResultStr = HandleConnectBlueprintPins(Params);
+    }
+    else if (Method == TEXT("get_blueprint_graph"))
+    {
+        ResultStr = HandleGetBlueprintGraph(Params);
+    }
+    else if (Method == TEXT("add_blueprint_variable"))
+    {
+        ResultStr = HandleAddBlueprintVariable(Params);
+    }
+    else if (Method == TEXT("remove_blueprint_variable"))
+    {
+        ResultStr = HandleRemoveBlueprintVariable(Params);
+    }
+    else if (Method == TEXT("import_asset"))
+    {
+        ResultStr = HandleImportAsset(Params);
+    }
+    else if (Method == TEXT("export_asset"))
+    {
+        ResultStr = HandleExportAsset(Params);
+    }
+    else if (Method == TEXT("get_ue_logs"))
+    {
+        ResultStr = HandleGetLogs(Params);
+    }
+    else if (Method == TEXT("execute_editor_command"))
+    {
+        ResultStr = HandleExecuteEditorCommand(Params);
+    }
+    else if (Method == TEXT("focus_editor_panel"))
+    {
+        ResultStr = HandleFocusEditorPanel(Params);
+    }
+    else if (Method == TEXT("get_editor_commands"))
+    {
+        ResultStr = HandleGetEditorCommands(Params);
+    }
+    else if (Method == TEXT("create_blueprint_function_graph"))
+    {
+        ResultStr = HandleCreateBlueprintFunctionGraph(Params);
+    }
+    else if (Method == TEXT("list_blueprint_graphs"))
+    {
+        ResultStr = HandleListBlueprintGraphs(Params);
+    }
+    else if (Method == TEXT("delete_blueprint_graph"))
+    {
+        ResultStr = HandleDeleteBlueprintGraph(Params);
+    }
+    else
+    {
+        TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+        Response->SetStringField(TEXT("id"), RequestId);
+        Response->SetBoolField(TEXT("success"), false);
+        Response->SetStringField(TEXT("error"), FString::Printf(TEXT("Unknown method: %s"), *Method));
+
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    }
+
+    return ResultStr;
+}
