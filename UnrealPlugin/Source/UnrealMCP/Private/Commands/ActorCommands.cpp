@@ -302,13 +302,10 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
     {
         if (GEditor)
         {
-            FString PackageName = Path;
-            if (!PackageName.EndsWith(TEXT(".umap")))
-            {
-                PackageName = FString::Printf(TEXT("%s.umap"), *Path);
-            }
-
-            FEditorFileUtils::LoadMap(PackageName, false, false);
+            // Use Exec-based MAP LOAD which handles the level transition via the
+            // editor command system — more stable than calling LoadMap directly.
+            FString Command = FString::Printf(TEXT("MAP LOAD FILE=\"%s\""), *Path);
+            GEditor->Exec(nullptr, *Command);
             bSuccess = true;
         }
         DoneEvent->Trigger();
