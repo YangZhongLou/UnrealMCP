@@ -360,6 +360,7 @@ FString HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params)
             return;
         }
 
+        NewNode->CreateNewGuid();
         NewNode->NodePosX = PosX;
         NewNode->NodePosY = PosY;
 

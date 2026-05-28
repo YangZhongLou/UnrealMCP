@@ -7,6 +7,7 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Editor.h"
+#include "FileHelpers.h"
 #include "Dom/JsonObject.h"
 #include "Async/Async.h"
 #include "Serialization/JsonSerializer.h"
@@ -294,13 +295,31 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
 {
     FString Path = Params->GetStringField(TEXT("path"));
 
-    if (GEditor)
-    {
-        GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Path);
-        return TEXT("{\"success\":true,\"result\":{\"opened\":true}}");
-    }
+    bool bSuccess = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-    return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        if (GEditor)
+        {
+            FString PackageName = Path;
+            if (!PackageName.EndsWith(TEXT(".umap")))
+            {
+                PackageName = FString::Printf(TEXT("%s.umap"), *Path);
+            }
+
+            FEditorFileUtils::LoadMap(PackageName, false, false);
+            bSuccess = true;
+        }
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (bSuccess)
+        return TEXT("{\"success\":true,\"result\":{\"opened\":true}}");
+    return TEXT("{\"success\":false,\"error\":\"Failed to open level\"}");
 }
 
 FString HandleDestroyActor(const TSharedPtr<FJsonObject>& Params)

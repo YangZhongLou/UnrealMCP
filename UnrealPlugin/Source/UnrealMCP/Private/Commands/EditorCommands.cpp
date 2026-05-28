@@ -142,7 +142,11 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (GEditor) { GEditor->RequestPlaySession(FRequestPlaySessionParams()); bSuccess = true; }
+        if (GEditor)
+        {
+            GEditor->RequestPlaySession(FRequestPlaySessionParams());
+            bSuccess = true;
+        }
         DoneEvent->Trigger();
     });
     DoneEvent->Wait();
@@ -153,17 +157,23 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
-    bool bSuccess = false;
+    bool bStopped = false;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (GEditor) { GEditor->EndPlayMap(); bSuccess = true; }
+        if (GEditor && GEditor->IsPlaySessionInProgress())
+        {
+            GEditor->EndPlayMap();
+            bStopped = true;
+        }
         DoneEvent->Trigger();
     });
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
-    if (!bSuccess) return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
-    return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
+
+    if (bStopped)
+        return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
+    return TEXT("{\"success\":false,\"error\":\"No active play session\"}");
 }
 
 FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
@@ -518,15 +528,26 @@ FString HandleGetViewportCamera(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (!GCurrentLevelEditingViewportClient)
+        // Fall back to any available viewport if the current one is null
+        FLevelEditorViewportClient* ViewportClient = GCurrentLevelEditingViewportClient;
+        if (!ViewportClient && GEditor)
+        {
+            const TArray<FLevelEditorViewportClient*>& Clients = GEditor->GetLevelViewportClients();
+            for (FLevelEditorViewportClient* Client : Clients)
+            {
+                if (Client) { ViewportClient = Client; break; }
+            }
+        }
+
+        if (!ViewportClient)
         {
             ErrorMsg = TEXT("No viewport camera available");
             DoneEvent->Trigger();
             return;
         }
 
-        FVector Location = GCurrentLevelEditingViewportClient->GetViewLocation();
-        FRotator Rotation = GCurrentLevelEditingViewportClient->GetViewRotation();
+        FVector Location = ViewportClient->GetViewLocation();
+        FRotator Rotation = ViewportClient->GetViewRotation();
 
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(Location.X)));

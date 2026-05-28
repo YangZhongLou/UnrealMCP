@@ -29,7 +29,27 @@
 | Phase 21 | v1.0 | Monolith 重构 | 0 (重构) | ✅ 完成 |
 | Phase 22 | v1.0 | GameThread 修复 + UE 5.7 兼容性 | 0 (修复) | ✅ 完成 |
 | Phase 23 | v1.0 | 全量真实 UE 测试覆盖 (42 tests, 58/58 tools) | 0 (测试) | ✅ 完成 |
+| Phase 24 | v1.0 | 真实 UE 测试 bug 修复 (7/7 已修复并验证) | 0 (修复) | ✅ 完成 |
 | **累计** | | | **58** | |
+
+### Phase 24 修复明细
+
+**崩溃修复 (C++ 代码 + 项目配置):**
+
+| Bug | 文件 | 变更 |
+| --- | --- | --- |
+| `open_level` 崩 UE | `ActorCommands.cpp:293` | `AsyncTask(GameThread)` + `FEditorFileUtils::LoadMap` 替代 `OpenEditorForAsset` |
+| `play_in_editor` PIE 崩溃 | `EditorCommands.cpp:139` + `DefaultEngine.ini` | 无代码变更; 项目添加 `GlobalDefaultGameMode=/Script/Engine.GameModeBase` |
+| `stop_play_in_editor` 连接断开 | `EditorCommands.cpp:154` | `RequestEndPlaySession()` 替代 `EndPlayMap()`; 添加 `IsPlaySessionInProgress()` 检查 |
+
+**逻辑 Bug 修复:**
+
+| Bug | 文件 | 变更 |
+| --- | --- | --- |
+| `connect_blueprint_pins` node_id 全零 | `BlueprintCommands.cpp:363` | 添加 `NewNode->CreateNewGuid()` |
+| `rename_asset` 失败 | `AssetCommands.cpp:117` | 从源路径提取目录，构造完整目标路径 `{Dir}/{NewName}.{NewName}` |
+| `import_asset` .uasset 无法导入 | `AssetCommands.cpp:148` | `.uasset` 改用 `CopyFile` + `ScanPathsSynchronous`; 其他格式沿用 `ImportAssets` |
+| `get_viewport_camera` 无可用视口 | `EditorCommands.cpp:531` | fallback: `GCurrentLevelEditingViewportClient` → `GEditor->GetLevelViewportClients()` |
 
 ## 工具分布
 

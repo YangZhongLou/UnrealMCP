@@ -6,6 +6,7 @@
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "Misc/Paths.h"
+#include "HAL/PlatformFileManager.h"
 #include "Async/Async.h"
 
 FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params)
@@ -114,12 +115,16 @@ FString HandleRenameAsset(const TSharedPtr<FJsonObject>& Params)
     FString Path = Params->GetStringField(TEXT("path"));
     FString NewName = Params->GetStringField(TEXT("newName"));
 
+    // Construct full destination path from source directory + new name
+    FString Directory = FPaths::GetPath(Path);
+    FString DestinationPath = FString::Printf(TEXT("%s/%s.%s"), *Directory, *NewName, *NewName);
+
     bool bRenamed = false;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        bRenamed = UEditorAssetLibrary::RenameAsset(Path, NewName);
+        bRenamed = UEditorAssetLibrary::RenameAsset(Path, DestinationPath);
         DoneEvent->Trigger();
     });
 
@@ -139,30 +144,71 @@ FString HandleImportAsset(const TSharedPtr<FJsonObject>& Params)
         : TEXT("/Game");
 
     TArray<TSharedPtr<FJsonValue>> Assets;
+    FString ErrorMsg;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        TArray<FString> Files = { FilePath };
-        FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
-        TArray<UObject*> ImportedAssets = AssetToolsModule.Get().ImportAssets(Files, DestinationPath);
+        bool bPrevUnattended = GIsRunningUnattendedScript;
+        GIsRunningUnattendedScript = true;
 
-        for (UObject* Asset : ImportedAssets)
+        // .uasset files are already UE packages — copy to Content dir instead of using ImportAssets
+        if (FilePath.EndsWith(TEXT(".uasset")))
         {
-            if (Asset)
+            FString ContentDir = FPaths::ProjectContentDir();
+            FString RelativePath = DestinationPath.Replace(TEXT("/Game/"), TEXT(""));
+            FString DestDir = FPaths::Combine(ContentDir, RelativePath);
+            FString DestFile = FPaths::Combine(DestDir, FPaths::GetCleanFilename(FilePath));
+
+            IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+            PlatformFile.CreateDirectoryTree(*DestDir);
+
+            if (PlatformFile.CopyFile(*DestFile, *FilePath))
             {
+                // Scan asset registry to pick up the copied file
+                FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+                AssetRegistryModule.Get().ScanPathsSynchronous({DestinationPath}, true);
+
+                FString BaseName = FPaths::GetBaseFilename(FilePath);
                 TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
-                Obj->SetStringField(TEXT("name"), Asset->GetName());
-                Obj->SetStringField(TEXT("path"), Asset->GetPathName());
-                Obj->SetStringField(TEXT("class"), Asset->GetClass()->GetName());
+                Obj->SetStringField(TEXT("name"), BaseName);
+                Obj->SetStringField(TEXT("path"), FString::Printf(TEXT("%s/%s.%s"), *DestinationPath, *BaseName, *BaseName));
+                Obj->SetStringField(TEXT("class"), TEXT("Blueprint"));
                 Assets.Add(MakeShareable(new FJsonValueObject(Obj)));
             }
+            else
+            {
+                ErrorMsg = FString::Printf(TEXT("Failed to copy file: %s -> %s"), *FilePath, *DestFile);
+            }
         }
+        else
+        {
+            TArray<FString> Files = { FilePath };
+            FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+            TArray<UObject*> ImportedAssets = AssetToolsModule.Get().ImportAssets(Files, DestinationPath);
+
+            for (UObject* Asset : ImportedAssets)
+            {
+                if (Asset)
+                {
+                    TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
+                    Obj->SetStringField(TEXT("name"), Asset->GetName());
+                    Obj->SetStringField(TEXT("path"), Asset->GetPathName());
+                    Obj->SetStringField(TEXT("class"), Asset->GetClass()->GetName());
+                    Assets.Add(MakeShareable(new FJsonValueObject(Obj)));
+                }
+            }
+        }
+
+        GIsRunningUnattendedScript = bPrevUnattended;
         DoneEvent->Trigger();
     });
 
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     if (Assets.Num() == 0)
         return FString::Printf(TEXT("{\"success\":false,\"error\":\"Failed to import: %s\"}"), *FilePath);
