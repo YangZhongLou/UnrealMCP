@@ -82,6 +82,8 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
     {
         SpawnParams.Name = FName(*ActorName);
     }
+    FString MobilityStr = Params->HasField(TEXT("mobility"))
+        ? Params->GetStringField(TEXT("mobility")) : TEXT("");
 
     AActor* SpawnedActor = nullptr;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
@@ -89,6 +91,16 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         SpawnedActor = World->SpawnActor<AActor>(ActorClass, Location, FRotator::ZeroRotator, SpawnParams);
+        if (SpawnedActor && !MobilityStr.IsEmpty())
+        {
+            EComponentMobility::Type Mobility = EComponentMobility::Movable;
+            if (MobilityStr.Equals(TEXT("static"), ESearchCase::IgnoreCase))
+                Mobility = EComponentMobility::Static;
+            else if (MobilityStr.Equals(TEXT("stationary"), ESearchCase::IgnoreCase))
+                Mobility = EComponentMobility::Stationary;
+            USceneComponent* Root = SpawnedActor->GetRootComponent();
+            if (Root) Root->SetMobility(Mobility);
+        }
         DoneEvent->Trigger();
     });
 
