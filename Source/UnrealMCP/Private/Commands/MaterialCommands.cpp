@@ -11,7 +11,6 @@
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "MaterialEditingLibrary.h"
-#include "MaterialShared.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -241,10 +240,7 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 		if (bHasProperties)
 		{
 			NewMaterial->PostEditChange();
-			FMaterialUpdateContext UpdateContext;
-			UpdateContext.AddMaterial(NewMaterial);
 		}
-		NewMaterial->ForceRecompileForRendering();
 
 		FAssetRegistryModule::AssetCreated(NewMaterial);
 
