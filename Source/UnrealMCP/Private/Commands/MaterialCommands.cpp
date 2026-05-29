@@ -21,6 +21,7 @@
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
 #include "Factories/MaterialFactoryNew.h"
 #include "UObject/SavePackage.h"
+#include "Engine/SubsurfaceProfile.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Async/Async.h"
 
@@ -181,6 +182,32 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			else if (ShadingModelStr.Equals(TEXT("thin_translucent"), ESearchCase::IgnoreCase))
 				SM = MSM_ThinTranslucent;
 			NewMaterial->SetShadingModel(SM);
+		}
+
+		// Set subsurface profile if provided (auto-create if not found)
+		if (Params->HasField(TEXT("subsurfaceProfile")))
+		{
+			FString ProfilePath = Params->GetStringField(TEXT("subsurfaceProfile"));
+			USubsurfaceProfile* Profile = LoadObject<USubsurfaceProfile>(nullptr, *ProfilePath);
+			if (!Profile)
+			{
+				FString ProfileName = FPaths::GetBaseFilename(ProfilePath);
+				FString ProfilePkgPath = FPaths::GetPath(ProfilePath);
+				UPackage* ProfilePkg = CreatePackage(*(ProfilePkgPath / ProfileName));
+				if (ProfilePkg)
+				{
+					Profile = NewObject<USubsurfaceProfile>(ProfilePkg, FName(*ProfileName), RF_Public | RF_Standalone);
+					if (Profile)
+					{
+						FAssetRegistryModule::AssetCreated(Profile);
+						Profile->MarkPackageDirty();
+					}
+				}
+			}
+			if (Profile)
+			{
+				NewMaterial->SubsurfaceProfile = Profile;
+			}
 		}
 
 		// Mark for modification and snapshot pre-edit state
