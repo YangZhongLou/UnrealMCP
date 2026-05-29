@@ -11,6 +11,7 @@
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "MaterialEditingLibrary.h"
+#include "MaterialShared.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -183,6 +184,13 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			NewMaterial->SetShadingModel(SM);
 		}
 
+		// Mark for modification and snapshot pre-edit state
+		if (bHasProperties)
+		{
+			NewMaterial->Modify();
+			NewMaterial->PreEditChange(nullptr);
+		}
+
 		// Create expression nodes for material properties
 		if (bHasBaseColor)
 		{
@@ -229,11 +237,14 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			}
 		}
 
+		// Trigger shader compilation
 		if (bHasProperties)
 		{
-			NewMaterial->PreEditChange(nullptr);
 			NewMaterial->PostEditChange();
+			FMaterialUpdateContext UpdateContext;
+			UpdateContext.AddMaterial(NewMaterial);
 		}
+		NewMaterial->ForceRecompileForRendering();
 
 		FAssetRegistryModule::AssetCreated(NewMaterial);
 
@@ -341,9 +352,15 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 		FString PackagePath = FPaths::GetPath(Path);
 		FString FullName = PackagePath / AssetName;
 
-		// Reuse existing asset to avoid overwrite dialog
+		// Reuse existing MI, but reparent if parent changed
 		if (UMaterialInstance* Existing = LoadObject<UMaterialInstance>(nullptr, *(FullName + TEXT(".") + AssetName)))
 		{
+			UMaterialInstanceConstant* ExistingMIC = Cast<UMaterialInstanceConstant>(Existing);
+			if (ExistingMIC && ExistingMIC->Parent != ParentMat)
+			{
+				ExistingMIC->SetParentEditorOnly(ParentMat);
+				ExistingMIC->PostEditChange();
+			}
 			TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 			Result->SetStringField(TEXT("path"), Path);
 			Result->SetStringField(TEXT("type"), InstanceType.ToLower());
