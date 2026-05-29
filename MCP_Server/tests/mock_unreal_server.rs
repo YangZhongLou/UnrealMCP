@@ -122,6 +122,17 @@ impl MockUnrealServer {
                                         "success": true,
                                         "result": {"renamed": true}
                                     }),
+                                    "create_material" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "path": req["params"]["path"].as_str().unwrap_or("/Game/Materials/NewMat"),
+                                            "assetName": req["params"]["path"].as_str()
+                                                .and_then(|p| p.rsplit('/').next())
+                                                .unwrap_or("NewMat"),
+                                            "shadingModel": req["params"].get("shadingModel")
+                                        }
+                                    }),
                                     _ => json!({
                                         "id": req["id"],
                                         "success": false,

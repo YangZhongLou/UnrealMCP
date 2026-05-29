@@ -158,6 +158,25 @@ async fn test_get_actor_list() {
 }
 
 #[tokio::test]
+async fn test_create_material() {
+    let mock = MockUnrealServer::start(13388).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13388");
+    let response = client.send_command("create_material", json!({
+        "path": "/Game/Materials/JadeMaterial",
+        "shadingModel": "subsurface_profile",
+        "baseColor": [0.1, 0.8, 0.3],
+        "roughness": 0.3,
+        "reuse": true
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["path"], "/Game/Materials/JadeMaterial");
+
+    mock.stop().await;
+}
+
+#[tokio::test]
 async fn test_create_level() {
     let mock = MockUnrealServer::start(13387).await;
 

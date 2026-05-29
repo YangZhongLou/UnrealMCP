@@ -2,8 +2,8 @@
 *.exe
 *.pdb
 MCP_Server/target/
-UnrealPlugin/Build/
-UnrealPlugin/Config/
-UnrealPlugin/Binaries/
-UnrealPlugin/Intermediate/
+Build/
+Config/
+Binaries/
+Intermediate/
 ue_editor.log

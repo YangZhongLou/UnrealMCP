@@ -439,6 +439,32 @@ impl UnrealMcpServer {
         self.call("set_material", p).await
     }
 
+    #[tool(description = "Create a new material asset. Supports shading_model='subsurface_profile' for jade/SSS, \
+                           'default_lit', 'unlit', 'subsurface', 'clear_coat', 'thin_translucent'. \
+                           Optionally set blend_mode, base_color [r,g,b], metallic, roughness, specular. \
+                           Set reuse=true to silently succeed if the material already exists.")]
+    async fn create_material(
+        &self,
+        #[tool(param)] path: String,
+        #[tool(param)] shading_model: Option<String>,
+        #[tool(param)] blend_mode: Option<String>,
+        #[tool(param)] base_color: Option<Vec<f64>>,
+        #[tool(param)] metallic: Option<f64>,
+        #[tool(param)] roughness: Option<f64>,
+        #[tool(param)] specular: Option<f64>,
+        #[tool(param)] reuse: Option<bool>,
+    ) -> String {
+        let mut p = json!({"path": path});
+        if let Some(v) = shading_model { p["shadingModel"] = json!(v); }
+        if let Some(v) = blend_mode { p["blendMode"] = json!(v); }
+        if let Some(v) = base_color { p["baseColor"] = json!(v); }
+        if let Some(v) = metallic { p["metallic"] = json!(v); }
+        if let Some(v) = roughness { p["roughness"] = json!(v); }
+        if let Some(v) = specular { p["specular"] = json!(v); }
+        if let Some(v) = reuse { p["reuse"] = json!(v); }
+        self.call("create_material", p).await
+    }
+
     #[tool(description = "Create a material instance from a parent material")]
     async fn create_material_instance(
         &self,

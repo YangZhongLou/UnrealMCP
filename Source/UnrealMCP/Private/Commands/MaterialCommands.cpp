@@ -8,6 +8,9 @@
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "MaterialEditingLibrary.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -73,6 +76,31 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 {
 	FString Path = Params->GetStringField(TEXT("path"));
 
+	// Parse optional params
+	FString ShadingModelStr = Params->HasField(TEXT("shadingModel"))
+		? Params->GetStringField(TEXT("shadingModel")) : TEXT("");
+	FString BlendModeStr = Params->HasField(TEXT("blendMode"))
+		? Params->GetStringField(TEXT("blendMode")) : TEXT("");
+	bool bReuse = Params->HasField(TEXT("reuse")) ? Params->GetBoolField(TEXT("reuse")) : false;
+
+	bool bHasBaseColor = Params->HasField(TEXT("baseColor"));
+	FLinearColor BaseColor(0, 0, 0);
+	if (bHasBaseColor)
+	{
+		const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("baseColor"));
+		if (Arr.Num() >= 3)
+			BaseColor = FLinearColor(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+		else
+			bHasBaseColor = false;
+	}
+	bool bHasMetallic = Params->HasField(TEXT("metallic"));
+	float MetallicVal = bHasMetallic ? (float)Params->GetNumberField(TEXT("metallic")) : 0.0f;
+	bool bHasRoughness = Params->HasField(TEXT("roughness"));
+	float RoughnessVal = bHasRoughness ? (float)Params->GetNumberField(TEXT("roughness")) : 0.5f;
+	bool bHasSpecular = Params->HasField(TEXT("specular"));
+	float SpecularVal = bHasSpecular ? (float)Params->GetNumberField(TEXT("specular")) : 0.5f;
+	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular;
+
 	FString ErrorMsg;
 	TSharedPtr<FJsonObject> ResponseJson;
 	FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
@@ -88,6 +116,18 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 		// Check if asset already exists
 		if (LoadObject<UMaterial>(nullptr, *(FullName + TEXT(".") + AssetName)))
 		{
+			if (bReuse)
+			{
+				TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+				Result->SetStringField(TEXT("path"), Path);
+				Result->SetStringField(TEXT("assetName"), AssetName);
+				Result->SetBoolField(TEXT("reused"), true);
+				ResponseJson = MakeShareable(new FJsonObject);
+				ResponseJson->SetBoolField(TEXT("success"), true);
+				ResponseJson->SetObjectField(TEXT("result"), Result);
+				DoneEvent->Trigger();
+				return;
+			}
 			ErrorMsg = FString::Printf(TEXT("Material already exists: %s"), *FullName);
 			DoneEvent->Trigger();
 			return;
@@ -109,11 +149,99 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			return;
 		}
 
+		// Set blend mode
+		if (!BlendModeStr.IsEmpty())
+		{
+			if (BlendModeStr.Equals(TEXT("opaque"), ESearchCase::IgnoreCase))
+				NewMaterial->BlendMode = BLEND_Opaque;
+			else if (BlendModeStr.Equals(TEXT("masked"), ESearchCase::IgnoreCase))
+				NewMaterial->BlendMode = BLEND_Masked;
+			else if (BlendModeStr.Equals(TEXT("translucent"), ESearchCase::IgnoreCase))
+				NewMaterial->BlendMode = BLEND_Translucent;
+			else if (BlendModeStr.Equals(TEXT("additive"), ESearchCase::IgnoreCase))
+				NewMaterial->BlendMode = BLEND_Additive;
+			else if (BlendModeStr.Equals(TEXT("modulate"), ESearchCase::IgnoreCase))
+				NewMaterial->BlendMode = BLEND_Modulate;
+		}
+
+		// Set shading model
+		if (!ShadingModelStr.IsEmpty())
+		{
+			EMaterialShadingModel SM = MSM_DefaultLit;
+			if (ShadingModelStr.Equals(TEXT("default_lit"), ESearchCase::IgnoreCase))
+				SM = MSM_DefaultLit;
+			else if (ShadingModelStr.Equals(TEXT("unlit"), ESearchCase::IgnoreCase))
+				SM = MSM_Unlit;
+			else if (ShadingModelStr.Equals(TEXT("subsurface"), ESearchCase::IgnoreCase))
+				SM = MSM_Subsurface;
+			else if (ShadingModelStr.Equals(TEXT("subsurface_profile"), ESearchCase::IgnoreCase))
+				SM = MSM_SubsurfaceProfile;
+			else if (ShadingModelStr.Equals(TEXT("clear_coat"), ESearchCase::IgnoreCase))
+				SM = MSM_ClearCoat;
+			else if (ShadingModelStr.Equals(TEXT("thin_translucent"), ESearchCase::IgnoreCase))
+				SM = MSM_ThinTranslucent;
+			NewMaterial->SetShadingModel(SM);
+		}
+
+		// Create expression nodes for material properties
+		if (bHasBaseColor)
+		{
+			UMaterialExpression* Expr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant3Vector::StaticClass(), -400, 0);
+			UMaterialExpressionConstant3Vector* BaseColorExpr = Cast<UMaterialExpressionConstant3Vector>(Expr);
+			if (BaseColorExpr)
+			{
+				BaseColorExpr->Constant = BaseColor;
+				UMaterialEditingLibrary::ConnectMaterialProperty(BaseColorExpr, TEXT(""), MP_BaseColor);
+			}
+		}
+		if (bHasMetallic)
+		{
+			UMaterialExpression* Expr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant::StaticClass(), -400, -200);
+			UMaterialExpressionConstant* MetallicExpr = Cast<UMaterialExpressionConstant>(Expr);
+			if (MetallicExpr)
+			{
+				MetallicExpr->R = MetallicVal;
+				UMaterialEditingLibrary::ConnectMaterialProperty(MetallicExpr, TEXT(""), MP_Metallic);
+			}
+		}
+		if (bHasRoughness)
+		{
+			UMaterialExpression* Expr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant::StaticClass(), -400, -400);
+			UMaterialExpressionConstant* RoughnessExpr = Cast<UMaterialExpressionConstant>(Expr);
+			if (RoughnessExpr)
+			{
+				RoughnessExpr->R = RoughnessVal;
+				UMaterialEditingLibrary::ConnectMaterialProperty(RoughnessExpr, TEXT(""), MP_Roughness);
+			}
+		}
+		if (bHasSpecular)
+		{
+			UMaterialExpression* Expr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant::StaticClass(), -400, -600);
+			UMaterialExpressionConstant* SpecularExpr = Cast<UMaterialExpressionConstant>(Expr);
+			if (SpecularExpr)
+			{
+				SpecularExpr->R = SpecularVal;
+				UMaterialEditingLibrary::ConnectMaterialProperty(SpecularExpr, TEXT(""), MP_Specular);
+			}
+		}
+
+		if (bHasProperties)
+		{
+			NewMaterial->PreEditChange(nullptr);
+			NewMaterial->PostEditChange();
+		}
+
 		FAssetRegistryModule::AssetCreated(NewMaterial);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
 		Result->SetStringField(TEXT("assetName"), AssetName);
+		if (!ShadingModelStr.IsEmpty())
+			Result->SetStringField(TEXT("shadingModel"), ShadingModelStr);
 
 		ResponseJson = MakeShareable(new FJsonObject);
 		ResponseJson->SetBoolField(TEXT("success"), true);
