@@ -80,16 +80,46 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 	{
 		FString AssetName = FPaths::GetBaseFilename(Path);
 		FString PackagePath = FPaths::GetPath(Path);
+		FString FullName = PackagePath / AssetName;
 
-		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-		UMaterialFactoryNew* Factory = NewObject<UMaterialFactoryNew>();
-		Factory->bEditAfterNew = false;
-		UObject* NewAsset = AssetTools.CreateAsset(
-			AssetName, PackagePath, UMaterial::StaticClass(), Factory);
-
-		if (!NewAsset)
+		// Check if asset already exists
+		if (LoadObject<UMaterial>(nullptr, *(FullName + TEXT(".") + AssetName)))
 		{
-			ErrorMsg = TEXT("Failed to create material");
+			ErrorMsg = FString::Printf(TEXT("Material already exists: %s"), *FullName);
+			DoneEvent->Trigger();
+			return;
+		}
+
+		UPackage* Package = CreatePackage(*FullName);
+		if (!Package)
+		{
+			ErrorMsg = TEXT("Failed to create package");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		UMaterial* NewMaterial = NewObject<UMaterial>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+		if (!NewMaterial)
+		{
+			ErrorMsg = TEXT("Failed to create material object");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		NewMaterial->PostEditChange();
+		Package->MarkPackageDirty();
+		FAssetRegistryModule::AssetCreated(NewMaterial);
+
+		// Save to disk
+		FString PackageFileName = FPackageName::LongPackageNameToFilename(
+			FullName, FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		FSavePackageResultStruct SaveResult = UPackage::Save(Package, NewMaterial, *PackageFileName, SaveArgs);
+
+		if (SaveResult.Result != ESavePackageResult::Success)
+		{
+			ErrorMsg = TEXT("Failed to save material package");
 			DoneEvent->Trigger();
 			return;
 		}
@@ -180,7 +210,7 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 	TSharedPtr<FJsonObject> ResponseJson;
 	FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
-	AsyncTask(ENamedThreads::GameThread, [&]()
+		AsyncTask(ENamedThreads::GameThread, [&]()
 	{
 		UMaterialInterface* ParentMat = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
 		if (!ParentMat)
@@ -192,32 +222,51 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 
 		FString AssetName = FPaths::GetBaseFilename(Path);
 		FString PackagePath = FPaths::GetPath(Path);
+		FString FullName = PackagePath / AssetName;
+
+		// Reuse existing asset to avoid overwrite dialog
+		if (UMaterialInstance* Existing = LoadObject<UMaterialInstance>(nullptr, *(FullName + TEXT(".") + AssetName)))
+		{
+			TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+			Result->SetStringField(TEXT("path"), Path);
+			Result->SetStringField(TEXT("type"), InstanceType.ToLower());
+			Result->SetStringField(TEXT("parent"), ParentPath);
+			Result->SetBoolField(TEXT("reused"), true);
+			ResponseJson = MakeShareable(new FJsonObject);
+			ResponseJson->SetBoolField(TEXT("success"), true);
+			ResponseJson->SetObjectField(TEXT("result"), Result);
+			DoneEvent->Trigger();
+			return;
+		}
+
+		UPackage* Package = CreatePackage(*FullName);
+		if (!Package) { ErrorMsg = TEXT("Failed to create package"); DoneEvent->Trigger(); return; }
 
 		UMaterialInstance* NewInstance = nullptr;
 		if (InstanceType.Equals(TEXT("dynamic"), ESearchCase::IgnoreCase))
 		{
-			UPackage* Package = CreatePackage(*(PackagePath / AssetName));
-			if (Package)
-			{
-				NewInstance = UMaterialInstanceDynamic::Create(ParentMat, Package, FName(*AssetName));
-			}
+			NewInstance = UMaterialInstanceDynamic::Create(ParentMat, Package, FName(*AssetName));
 		}
 		else
 		{
-			IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-			UMaterialInstanceConstantFactoryNew* Factory = NewObject<UMaterialInstanceConstantFactoryNew>();
-			Factory->InitialParent = ParentMat;
-			Factory->bEditAfterNew = false;
-			NewInstance = Cast<UMaterialInstance>(AssetTools.CreateAsset(
-				AssetName, PackagePath, UMaterialInstanceConstant::StaticClass(), Factory));
+			UMaterialInstanceConstant* MIC = NewObject<UMaterialInstanceConstant>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+			if (MIC)
+			{
+				MIC->SetParentEditorOnly(ParentMat);
+				NewInstance = MIC;
+			}
 		}
 
-		if (!NewInstance)
-		{
-			ErrorMsg = TEXT("Failed to create material instance");
-			DoneEvent->Trigger();
-			return;
-		}
+		if (!NewInstance) { ErrorMsg = TEXT("Failed to create material instance"); DoneEvent->Trigger(); return; }
+
+		NewInstance->PostEditChange();
+		Package->MarkPackageDirty();
+		FAssetRegistryModule::AssetCreated(NewInstance);
+
+		FString PackageFileName = FPackageName::LongPackageNameToFilename(FullName, FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::Save(Package, NewInstance, *PackageFileName, SaveArgs);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
