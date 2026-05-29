@@ -197,6 +197,7 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("filename"))
         : TEXT("screenshot");
 
+    bool bSuccess = false;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
@@ -206,8 +207,20 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
+    // Wait for async screenshot file to appear on disk
+    // FScreenshotRequest clears itself before file is written, so poll the file
+    FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
+    double Timeout = 15.0;
+    double StartTime = FPlatformTime::Seconds();
+    while (!IFileManager::Get().FileExists(*FullPath))
+    {
+        if (FPlatformTime::Seconds() - StartTime > Timeout) break;
+        FPlatformProcess::Sleep(0.05f);
+    }
+    bSuccess = IFileManager::Get().FileExists(*FullPath);
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-    Result->SetStringField(TEXT("path"), FString::Printf(TEXT("%s/Saved/Screenshots/%s.png"), *FPaths::ProjectDir(), *Filename));
+    Result->SetStringField(TEXT("path"), FullPath);
+    Result->SetBoolField(TEXT("saved"), bSuccess);
 
     FString ResultStr;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
