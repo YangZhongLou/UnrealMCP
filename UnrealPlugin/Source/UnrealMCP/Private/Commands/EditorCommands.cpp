@@ -62,7 +62,22 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
         UWorld* World = GEditor->GetEditorWorldContext().World();
         if (World)
         {
-            FEditorFileUtils::SaveLevel(World->GetCurrentLevel());
+            ULevel* CurrentLevel = World->GetCurrentLevel();
+            if (CurrentLevel)
+            {
+                UPackage* LevelPackage = CurrentLevel->GetPackage();
+                FString PackageName = LevelPackage ? LevelPackage->GetName() : TEXT("");
+                if (FPackageName::IsTempPackage(PackageName))
+                {
+                    FString DefaultPath = FString::Printf(TEXT("/Game/Maps/AutoSave_%s"),
+                        *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")));
+                    FEditorFileUtils::SaveLevelAs(CurrentLevel, &DefaultPath);
+                }
+                else
+                {
+                    FEditorFileUtils::SaveLevel(CurrentLevel);
+                }
+            }
             bSaved = true;
         }
         DoneEvent->Trigger();

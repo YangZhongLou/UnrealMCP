@@ -106,23 +106,8 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			return;
 		}
 
-		NewMaterial->PostEditChange();
 		Package->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(NewMaterial);
-
-		// Save to disk
-		FString PackageFileName = FPackageName::LongPackageNameToFilename(
-			FullName, FPackageName::GetAssetPackageExtension());
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		FSavePackageResultStruct SaveResult = UPackage::Save(Package, NewMaterial, *PackageFileName, SaveArgs);
-
-		if (SaveResult.Result != ESavePackageResult::Success)
-		{
-			ErrorMsg = TEXT("Failed to save material package");
-			DoneEvent->Trigger();
-			return;
-		}
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
@@ -259,14 +244,8 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 
 		if (!NewInstance) { ErrorMsg = TEXT("Failed to create material instance"); DoneEvent->Trigger(); return; }
 
-		NewInstance->PostEditChange();
 		Package->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(NewInstance);
-
-		FString PackageFileName = FPackageName::LongPackageNameToFilename(FullName, FPackageName::GetAssetPackageExtension());
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		UPackage::Save(Package, NewInstance, *PackageFileName, SaveArgs);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
