@@ -10,6 +10,10 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionFresnel.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionNoise.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "MaterialEditingLibrary.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
@@ -100,7 +104,10 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 	float RoughnessVal = bHasRoughness ? (float)Params->GetNumberField(TEXT("roughness")) : 0.5f;
 	bool bHasSpecular = Params->HasField(TEXT("specular"));
 	float SpecularVal = bHasSpecular ? (float)Params->GetNumberField(TEXT("specular")) : 0.5f;
-	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular;
+	bool bHasFresnel = Params->HasField(TEXT("fresnelExponent"));
+	float FresnelExponent = bHasFresnel ? (float)Params->GetNumberField(TEXT("fresnelExponent")) : 3.0f;
+	bool bHasClouds = Params->HasField(TEXT("proceduralClouds")) && Params->GetBoolField(TEXT("proceduralClouds"));
+	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular || bHasFresnel || bHasClouds;
 
 	FString ErrorMsg;
 	TSharedPtr<FJsonObject> ResponseJson;
@@ -260,6 +267,60 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			{
 				SpecularExpr->R = SpecularVal;
 				UMaterialEditingLibrary::ConnectMaterialProperty(SpecularExpr, TEXT(""), MP_Specular);
+			}
+		}
+
+		// Fresnel edge glow: Fresnel -> Multiply(RimColor) -> Emissive
+		if (bHasFresnel)
+		{
+			UMaterialExpression* FresnelExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionFresnel::StaticClass(), 400, 200);
+			UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(FresnelExpr);
+			if (Fresnel)
+			{
+				Fresnel->ExponentIn = FresnelExponent;
+				// Rim color: light jade green glow
+				UMaterialExpression* RimColorExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+					NewMaterial, UMaterialExpressionConstant3Vector::StaticClass(), 400, 0);
+				UMaterialExpressionConstant3Vector* RimColor = Cast<UMaterialExpressionConstant3Vector>(RimColorExpr);
+				if (RimColor)
+				{
+					RimColor->Constant = FLinearColor(0.15f, 0.55f, 0.30f, 1.0f);
+					// Multiply: Fresnel(scalar) * RimColor(vector) = colored rim glow
+					UMaterialExpression* MulExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+						NewMaterial, UMaterialExpressionMultiply::StaticClass(), 400, -100);
+					UMaterialExpressionMultiply* Mul = Cast<UMaterialExpressionMultiply>(MulExpr);
+					if (Mul)
+					{
+						Mul->A.Expression = Fresnel;
+						Mul->A.OutputIndex = 0;
+						Mul->B.Expression = RimColor;
+						Mul->B.OutputIndex = 0;
+						UMaterialEditingLibrary::ConnectMaterialProperty(Mul, TEXT(""), MP_EmissiveColor);
+					}
+				}
+			}
+		}
+
+		// Procedural clouds: TexCoord -> Noise(Scale=3.0) blended into BaseColor
+		if (bHasClouds)
+		{
+			UMaterialExpression* TCExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionTextureCoordinate::StaticClass(), -600, 200);
+			UMaterialExpressionTextureCoordinate* TexCoord = Cast<UMaterialExpressionTextureCoordinate>(TCExpr);
+			if (TexCoord) TexCoord->CoordinateIndex = 0;
+			UMaterialExpression* NoiseExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionNoise::StaticClass(), -400, 200);
+			UMaterialExpressionNoise* Noise = Cast<UMaterialExpressionNoise>(NoiseExpr);
+			if (Noise)
+			{
+				Noise->Scale = 3.0f;
+				Noise->Quality = 2;
+				if (TexCoord)
+				{
+					Noise->Position.Expression = TexCoord;
+					Noise->Position.OutputIndex = 0;
+				}
 			}
 		}
 
