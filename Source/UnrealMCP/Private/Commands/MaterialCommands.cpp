@@ -341,6 +341,12 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 
 		FAssetRegistryModule::AssetCreated(NewMaterial);
 
+		// Save package to disk so asset persists across editor restarts
+		Package->MarkPackageDirty();
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, NewMaterial, *FPackagePath::FromPackageNameChecked(FullName), SaveArgs);
+
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
 		Result->SetStringField(TEXT("assetName"), AssetName);
@@ -487,6 +493,12 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 		if (!NewInstance) { ErrorMsg = TEXT("Failed to create material instance"); DoneEvent->Trigger(); return; }
 
 		FAssetRegistryModule::AssetCreated(NewInstance);
+
+		// Save package to disk
+		Package->MarkPackageDirty();
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, NewInstance, *FPackagePath::FromPackageNameChecked(FullName), SaveArgs);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
