@@ -35,6 +35,7 @@ FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetSelectedActors(const TSharedPtr<FJsonObject>& Params);
 FString HandleSelectActor(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetStaticMesh(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetMaterial(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params);
@@ -363,6 +364,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("set_static_mesh"))
     {
         ResultStr = HandleSetStaticMesh(Params);
+    }
+    else if (Method == TEXT("create_material"))
+    {
+        ResultStr = HandleCreateMaterial(Params);
     }
     else if (Method == TEXT("set_material"))
     {
