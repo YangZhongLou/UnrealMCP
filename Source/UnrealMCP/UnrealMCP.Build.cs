@@ -44,7 +44,8 @@ public class UnrealMCP : ModuleRules
                 "UMG",
                 "Kismet",
                 "BlueprintGraph",
-                "MaterialEditor"
+                "MaterialEditor",
+                "RenderCore"
             }
         );
 
