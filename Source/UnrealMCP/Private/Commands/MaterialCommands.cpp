@@ -343,9 +343,10 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 
 		// Save package to disk so asset persists across editor restarts
 		Package->MarkPackageDirty();
+		FString PackageFile = FPackageName::LongPackageNameToFilename(FullName, FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		UPackage::SavePackage(Package, NewMaterial, *FPackagePath::FromPackageNameChecked(FullName), SaveArgs);
+		UPackage::SavePackage(Package, NewMaterial, *PackageFile, SaveArgs);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
@@ -496,9 +497,10 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 
 		// Save package to disk
 		Package->MarkPackageDirty();
+		FString PackageFile = FPackageName::LongPackageNameToFilename(FullName, FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		UPackage::SavePackage(Package, NewInstance, *FPackagePath::FromPackageNameChecked(FullName), SaveArgs);
+		UPackage::SavePackage(Package, NewInstance, *PackageFile, SaveArgs);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 		Result->SetStringField(TEXT("path"), Path);
