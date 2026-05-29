@@ -14,6 +14,9 @@
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionNoise.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionOneMinus.h"
 #include "MaterialEditingLibrary.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
@@ -107,7 +110,19 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 	bool bHasFresnel = Params->HasField(TEXT("fresnelExponent"));
 	float FresnelExponent = bHasFresnel ? (float)Params->GetNumberField(TEXT("fresnelExponent")) : 3.0f;
 	bool bHasClouds = Params->HasField(TEXT("proceduralClouds")) && Params->GetBoolField(TEXT("proceduralClouds"));
-	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular || bHasFresnel || bHasClouds;
+	bool bHasTexture = Params->HasField(TEXT("texture"));
+	FString TexturePath = bHasTexture ? Params->GetStringField(TEXT("texture")) : TEXT("");
+	bool bHasLerpB = Params->HasField(TEXT("lerpColorB"));
+	FLinearColor LerpColorB(0,0,0);
+	if (bHasLerpB) {
+		const TArray<TSharedPtr<FJsonValue>>& LArr = Params->GetArrayField(TEXT("lerpColorB"));
+		if (LArr.Num() >= 3) LerpColorB = FLinearColor(LArr[0]->AsNumber(), LArr[1]->AsNumber(), LArr[2]->AsNumber());
+		else bHasLerpB = false;
+	}
+	float LerpAlpha = Params->HasField(TEXT("lerpAlpha")) ? (float)Params->GetNumberField(TEXT("lerpAlpha")) : 0.5f;
+	bool bHasOneMinus = Params->HasField(TEXT("oneMinusValue"));
+	float OneMinusVal = bHasOneMinus ? (float)Params->GetNumberField(TEXT("oneMinusValue")) : 0.5f;
+	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular || bHasFresnel || bHasClouds || bHasTexture || bHasLerpB || bHasOneMinus;
 
 	FString ErrorMsg;
 	TSharedPtr<FJsonObject> ResponseJson;
@@ -330,6 +345,87 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 					Noise->Position.Expression = TexCoord;
 					Noise->Position.OutputIndex = 0;
 				}
+			}
+		}
+
+		// Texture sample: load texture and tint with baseColor
+		if (bHasTexture)
+		{
+			UTexture* Tex = LoadObject<UTexture>(nullptr, *TexturePath);
+			if (Tex)
+			{
+				UMaterialExpression* TSParamExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+					NewMaterial, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -600, -400);
+				UMaterialExpressionTextureSampleParameter2D* TSParam = Cast<UMaterialExpressionTextureSampleParameter2D>(TSParamExpr);
+				if (TSParam)
+				{
+					TSParam->Texture = Tex;
+					TSParam->ParameterName = FName(TEXT("TexParam"));
+					if (bHasBaseColor)
+					{
+						UMaterialExpression* MulExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+							NewMaterial, UMaterialExpressionMultiply::StaticClass(), -200, -300);
+						UMaterialExpressionMultiply* Mul = Cast<UMaterialExpressionMultiply>(MulExpr);
+						if (Mul)
+						{
+							Mul->A.Expression = TSParam;
+							Mul->A.OutputIndex = 0;
+							UMaterialEditingLibrary::ConnectMaterialProperty(Mul, TEXT(""), MP_BaseColor);
+						}
+					}
+					else
+					{
+						UMaterialEditingLibrary::ConnectMaterialProperty(TSParam, TEXT(""), MP_BaseColor);
+					}
+				}
+			}
+		}
+
+		// Lerp: blend two colors by alpha
+		if (bHasLerpB && bHasBaseColor)
+		{
+			UMaterialExpression* CAExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant3Vector::StaticClass(), -400, -600);
+			UMaterialExpressionConstant3Vector* ColorA = Cast<UMaterialExpressionConstant3Vector>(CAExpr);
+			if (ColorA) ColorA->Constant = BaseColor;
+			UMaterialExpression* CBExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant3Vector::StaticClass(), -400, -800);
+			UMaterialExpressionConstant3Vector* ColorB = Cast<UMaterialExpressionConstant3Vector>(CBExpr);
+			if (ColorB) ColorB->Constant = LerpColorB;
+			UMaterialExpression* AlphaExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant::StaticClass(), -400, -1000);
+			UMaterialExpressionConstant* AlphaNode = Cast<UMaterialExpressionConstant>(AlphaExpr);
+			if (AlphaNode) AlphaNode->R = LerpAlpha;
+			UMaterialExpression* LerpExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionLinearInterpolate::StaticClass(), -200, -700);
+			UMaterialExpressionLinearInterpolate* LerpNode = Cast<UMaterialExpressionLinearInterpolate>(LerpExpr);
+			if (LerpNode && ColorA && ColorB && AlphaNode)
+			{
+				LerpNode->A.Expression = ColorA;
+				LerpNode->A.OutputIndex = 0;
+				LerpNode->B.Expression = ColorB;
+				LerpNode->B.OutputIndex = 0;
+				LerpNode->Alpha.Expression = AlphaNode;
+				LerpNode->Alpha.OutputIndex = 0;
+				UMaterialEditingLibrary::ConnectMaterialProperty(LerpNode, TEXT(""), MP_BaseColor);
+			}
+		}
+
+		// OneMinus: 1-x, useful for roughness/smoothness conversion
+		if (bHasOneMinus)
+		{
+			UMaterialExpression* OMInExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionConstant::StaticClass(), -400, -800);
+			UMaterialExpressionConstant* OMInConst = Cast<UMaterialExpressionConstant>(OMInExpr);
+			if (OMInConst) OMInConst->R = OneMinusVal;
+			UMaterialExpression* OMExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+				NewMaterial, UMaterialExpressionOneMinus::StaticClass(), -200, -800);
+			UMaterialExpressionOneMinus* OMNode = Cast<UMaterialExpressionOneMinus>(OMExpr);
+			if (OMNode && OMInConst)
+			{
+				OMNode->Input.Expression = OMInConst;
+				OMNode->Input.OutputIndex = 0;
+				UMaterialEditingLibrary::ConnectMaterialProperty(OMNode, TEXT(""), MP_Roughness);
 			}
 		}
 
