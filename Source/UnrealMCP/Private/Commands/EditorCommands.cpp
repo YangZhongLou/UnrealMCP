@@ -13,6 +13,8 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/Engine.h"
+#include "ImageUtils.h"
+#include "RenderingThread.h"
 #include "LogCaptureDevice.h"
 #include "HAL/IConsoleManager.h"
 #include "Framework/Docking/TabManager.h"
@@ -201,23 +203,45 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        FScreenshotRequest::RequestScreenshot(Filename, false, false);
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
+
+        FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
+
+        if (Viewport)
+        {
+            FlushRenderingCommands();
+            FIntRect CaptureRect(0, 0, Viewport->GetSizeXY().X, Viewport->GetSizeXY().Y);
+            TArray<FColor> Bitmap;
+            if (Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags(), CaptureRect))
+            {
+                TArray<uint8> CompressedBitmap;
+                FImageUtils::CompressImageArray(CaptureRect.Width(), CaptureRect.Height(), Bitmap, CompressedBitmap);
+                bSuccess = FFileHelper::SaveArrayToFile(CompressedBitmap, *FullPath);
+            }
+        }
+
+        // Fallback
+        if (!bSuccess)
+        {
+            FScreenshotRequest::RequestScreenshot(Filename, false, false);
+            double Timeout = 20.0;
+            double StartTime = FPlatformTime::Seconds();
+            while (!IFileManager::Get().FileExists(*FullPath))
+            {
+                if (FPlatformTime::Seconds() - StartTime > Timeout) break;
+                FPlatformProcess::Sleep(0.05f);
+            }
+            bSuccess = IFileManager::Get().FileExists(*FullPath);
+        }
+
         DoneEvent->Trigger();
     });
+
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
-    // Wait for async screenshot file to appear on disk
-    // FScreenshotRequest clears itself before file is written, so poll the file
     FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
-    double Timeout = 15.0;
-    double StartTime = FPlatformTime::Seconds();
-    while (!IFileManager::Get().FileExists(*FullPath))
-    {
-        if (FPlatformTime::Seconds() - StartTime > Timeout) break;
-        FPlatformProcess::Sleep(0.05f);
-    }
-    bSuccess = IFileManager::Get().FileExists(*FullPath);
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("path"), FullPath);
     Result->SetBoolField(TEXT("saved"), bSuccess);
@@ -228,7 +252,6 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
-
 FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params)
 {
     FString ClassName = Params->GetStringField(TEXT("className"));
