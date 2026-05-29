@@ -278,7 +278,16 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(FresnelExpr);
 			if (Fresnel)
 			{
-				Fresnel->ExponentIn = FresnelExponent;
+				// ExponentIn is FExpressionInput — must connect a Constant expression
+				UMaterialExpression* ExpConstExpr = UMaterialEditingLibrary::CreateMaterialExpression(
+					NewMaterial, UMaterialExpressionConstant::StaticClass(), 200, 300);
+				UMaterialExpressionConstant* ExpConst = Cast<UMaterialExpressionConstant>(ExpConstExpr);
+				if (ExpConst)
+				{
+					ExpConst->R = FresnelExponent;
+					Fresnel->ExponentIn.Expression = ExpConst;
+					Fresnel->ExponentIn.OutputIndex = 0;
+				}
 				// Rim color: light jade green glow
 				UMaterialExpression* RimColorExpr = UMaterialEditingLibrary::CreateMaterialExpression(
 					NewMaterial, UMaterialExpressionConstant3Vector::StaticClass(), 400, 0);
