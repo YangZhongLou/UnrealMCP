@@ -18,6 +18,7 @@
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
 #include "Factories/MaterialFactoryNew.h"
 #include "UObject/SavePackage.h"
+#include "Misc/ScopedSlowTask.h"
 #include "Async/Async.h"
 
 static AActor* FindActor(UWorld* World, const FString& Name)
@@ -78,6 +79,8 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 
 	AsyncTask(ENamedThreads::GameThread, [&]()
 	{
+		FScopedSlowTask SlowTask(0, FText(), false);
+
 		FString AssetName = FPaths::GetBaseFilename(Path);
 		FString PackagePath = FPaths::GetPath(Path);
 		FString FullName = PackagePath / AssetName;
@@ -106,7 +109,6 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			return;
 		}
 
-		Package->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(NewMaterial);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
@@ -205,6 +207,8 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 			return;
 		}
 
+		FScopedSlowTask SlowTask(0, FText(), false);
+
 		FString AssetName = FPaths::GetBaseFilename(Path);
 		FString PackagePath = FPaths::GetPath(Path);
 		FString FullName = PackagePath / AssetName;
@@ -244,7 +248,6 @@ FString HandleCreateMaterialInstance(const TSharedPtr<FJsonObject>& Params)
 
 		if (!NewInstance) { ErrorMsg = TEXT("Failed to create material instance"); DoneEvent->Trigger(); return; }
 
-		Package->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(NewInstance);
 
 		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
