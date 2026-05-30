@@ -3,14 +3,18 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+class FMcpJsonRpcServer;
+class FMcpProtocolAdapter;
+
 DECLARE_LOG_CATEGORY_EXTERN(LogUnrealMCP, Log, All);
 
-class FUnrealMCPModule : public IModuleInterface
+class UNREALMCP_API FUnrealMCPModule : public IModuleInterface
 {
 public:
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;
 
 private:
-    class FMCPCommandServer* CommandServer;
+    FMcpJsonRpcServer* JsonRpcServer;
+    TSharedPtr<FMcpProtocolAdapter> ProtocolAdapter;
 };
