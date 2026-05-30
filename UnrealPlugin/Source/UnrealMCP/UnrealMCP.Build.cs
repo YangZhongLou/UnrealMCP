@@ -34,18 +34,27 @@ public class UnrealMCP : ModuleRules
             new string[]
             {
                 "Projects",
-                "UnrealEd",
-                "LevelEditor",
-                "EditorSubsystem",
-                "EditorScriptingUtilities",
-                "AssetRegistry",
                 "Slate",
                 "SlateCore",
                 "UMG",
-                "Kismet",
-                "BlueprintGraph"
+                "Kismet"
             }
         );
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(
+                new string[]
+                {
+                    "UnrealEd",
+                    "LevelEditor",
+                    "EditorSubsystem",
+                    "EditorScriptingUtilities",
+                    "AssetRegistry",
+                    "BlueprintGraph"
+                }
+            );
+        }
 
         DynamicallyLoadedModuleNames.AddRange(
             new string[]

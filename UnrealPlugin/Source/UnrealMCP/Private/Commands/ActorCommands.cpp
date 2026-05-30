@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -761,3 +762,5 @@ FString HandleAddActorTag(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\",\"tag\":\"%s\"}}"), *ActorName, *Tag);
 }
+
+#endif

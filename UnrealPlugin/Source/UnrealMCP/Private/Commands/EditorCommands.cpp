@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Editor.h"
 #include "Selection.h"
@@ -772,3 +773,5 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
+
+#endif

@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/Blueprint.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -880,3 +881,5 @@ FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
     return Out;
 }
+
+#endif
