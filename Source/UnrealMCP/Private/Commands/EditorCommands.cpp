@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Editor.h"
 #include "Selection.h"
@@ -890,3 +891,5 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
+
+#endif

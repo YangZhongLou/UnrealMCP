@@ -1,5 +1,6 @@
 #include "UnrealMCP.h"
-#include "MCPCommandServer.h"
+#include "Core/McpJsonRpcServer.h"
+#include "Core/McpProtocolAdapter.h"
 #include "LogCaptureDevice.h"
 
 DEFINE_LOG_CATEGORY(LogUnrealMCP);
@@ -10,14 +11,18 @@ void FUnrealMCPModule::StartupModule()
 {
     UE_LOG(LogUnrealMCP, Log, TEXT("UnrealMCP module starting up..."));
 
-    CommandServer = new FMCPCommandServer();
-    if (CommandServer->StartServer(13377))
+    JsonRpcServer = new FMcpJsonRpcServer();
+
+    ProtocolAdapter = MakeShareable(new FMcpProtocolAdapter());
+    JsonRpcServer->SetProtocolAdapter(ProtocolAdapter);
+
+    if (JsonRpcServer->StartServer(13377))
     {
-        UE_LOG(LogUnrealMCP, Log, TEXT("MCP Command Server started on port 13377"));
+        UE_LOG(LogUnrealMCP, Log, TEXT("MCP JSON-RPC Server started on port 13377"));
     }
     else
     {
-        UE_LOG(LogUnrealMCP, Error, TEXT("Failed to start MCP Command Server"));
+        UE_LOG(LogUnrealMCP, Error, TEXT("Failed to start MCP JSON-RPC Server"));
     }
 
     FLogCaptureDevice::Get().Start();
@@ -29,12 +34,14 @@ void FUnrealMCPModule::ShutdownModule()
 
     FLogCaptureDevice::Get().Stop();
 
-    if (CommandServer)
+    if (JsonRpcServer)
     {
-        CommandServer->StopServer();
-        delete CommandServer;
-        CommandServer = nullptr;
+        JsonRpcServer->StopServer();
+        delete JsonRpcServer;
+        JsonRpcServer = nullptr;
     }
+
+    ProtocolAdapter.Reset();
 }
 
 #undef LOCTEXT_NAMESPACE

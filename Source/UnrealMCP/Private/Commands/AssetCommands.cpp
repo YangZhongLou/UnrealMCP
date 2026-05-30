@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EditorAssetLibrary.h"
@@ -270,3 +271,5 @@ FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
     return Out;
 }
+
+#endif

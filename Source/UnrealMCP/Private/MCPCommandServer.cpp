@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "MCPCommandServer.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -486,3 +487,5 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
     return ResultStr;
 }
+
+#endif
