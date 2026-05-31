@@ -64,6 +64,9 @@ FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params
 FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
 FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleRemoveBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
+FString HandleSaveLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -473,6 +476,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("delete_blueprint_graph"))
     {
         ResultStr = HandleDeleteBlueprintGraph(Params);
+    }
+    else if (Method == TEXT("get_level_blueprint"))
+    {
+        ResultStr = HandleGetLevelBlueprint(Params);
+    }
+    else if (Method == TEXT("remove_blueprint_nodes"))
+    {
+        ResultStr = HandleRemoveBlueprintNodes(Params);
+    }
+    else if (Method == TEXT("save_level_blueprint"))
+    {
+        ResultStr = HandleSaveLevelBlueprint(Params);
     }
     else
     {

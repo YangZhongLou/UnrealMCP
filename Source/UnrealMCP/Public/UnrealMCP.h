@@ -5,6 +5,7 @@
 
 class FMcpJsonRpcServer;
 class FMcpProtocolAdapter;
+class FMCPCommandServer;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogUnrealMCP, Log, All);
 
@@ -17,4 +18,5 @@ public:
 private:
     FMcpJsonRpcServer* JsonRpcServer;
     TSharedPtr<FMcpProtocolAdapter> ProtocolAdapter;
+    FMCPCommandServer* CommandServer;
 };

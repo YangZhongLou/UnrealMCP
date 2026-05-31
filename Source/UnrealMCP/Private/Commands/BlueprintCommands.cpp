@@ -1,7 +1,9 @@
 #if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/Blueprint.h"
+#include "Engine/LevelScriptBlueprint.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "EditorAssetLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Dom/JsonObject.h"
@@ -1078,6 +1080,269 @@ FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params)
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
     FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
+}
+
+// ---- Level Blueprint Commands ----
+
+FString HandleGetLevelBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        ULevel* CurrentLevel = World->GetCurrentLevel();
+        if (!CurrentLevel) { ErrorMsg = TEXT("No current level"); DoneEvent->Trigger(); return; }
+
+        ULevelScriptBlueprint* LevelBP = CurrentLevel->GetLevelScriptBlueprint();
+        if (!LevelBP) { ErrorMsg = TEXT("No level blueprint found"); DoneEvent->Trigger(); return; }
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("level_name"), CurrentLevel->GetName());
+        Result->SetStringField(TEXT("blueprint_path"), LevelBP->GetPathName());
+
+        TArray<TSharedPtr<FJsonValue>> Graphs;
+        for (UEdGraph* Graph : LevelBP->UbergraphPages)
+        {
+            TSharedPtr<FJsonObject> GraphObj = MakeShareable(new FJsonObject);
+            GraphObj->SetStringField(TEXT("name"), Graph->GetName());
+            GraphObj->SetStringField(TEXT("type"), TEXT("EventGraph"));
+
+            TArray<TSharedPtr<FJsonValue>> Nodes;
+            for (UEdGraphNode* Node : Graph->Nodes)
+            {
+                if (!Node) continue;
+
+                TSharedPtr<FJsonObject> NodeObj = MakeShareable(new FJsonObject);
+                NodeObj->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
+                NodeObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+                NodeObj->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+                NodeObj->SetNumberField(TEXT("pos_x"), Node->NodePosX);
+                NodeObj->SetNumberField(TEXT("pos_y"), Node->NodePosY);
+
+                TArray<TSharedPtr<FJsonValue>> Pins;
+                for (UEdGraphPin* Pin : Node->GetAllPins())
+                {
+                    if (!Pin || Pin->bHidden) continue;
+                    TSharedPtr<FJsonObject> PinObj = MakeShareable(new FJsonObject);
+                    PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+                    PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Output ? TEXT("output") : TEXT("input"));
+                    PinObj->SetStringField(TEXT("category"), Pin->PinType.PinCategory.ToString());
+
+                    TArray<TSharedPtr<FJsonValue>> Connections;
+                    for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+                    {
+                        if (LinkedPin && LinkedPin->GetOwningNode())
+                        {
+                            TSharedPtr<FJsonObject> LinkObj = MakeShareable(new FJsonObject);
+                            LinkObj->SetStringField(TEXT("node_id"), LinkedPin->GetOwningNode()->NodeGuid.ToString());
+                            LinkObj->SetStringField(TEXT("pin"), LinkedPin->PinName.ToString());
+                            Connections.Add(MakeShareable(new FJsonValueObject(LinkObj)));
+                        }
+                    }
+                    if (Connections.Num() > 0)
+                        PinObj->SetArrayField(TEXT("connected_to"), Connections);
+
+                    Pins.Add(MakeShareable(new FJsonValueObject(PinObj)));
+                }
+                NodeObj->SetArrayField(TEXT("pins"), Pins);
+                Nodes.Add(MakeShareable(new FJsonValueObject(NodeObj)));
+            }
+            GraphObj->SetNumberField(TEXT("node_count"), Nodes.Num());
+            GraphObj->SetArrayField(TEXT("nodes"), Nodes);
+            Graphs.Add(MakeShareable(new FJsonValueObject(GraphObj)));
+        }
+        Result->SetArrayField(TEXT("graphs"), Graphs);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleRemoveBlueprintNodes(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+    const TArray<TSharedPtr<FJsonValue>> NodeIdArray = Params->GetArrayField(TEXT("node_ids"));
+    TSet<FString> NodeIdsToRemove;
+    for (const TSharedPtr<FJsonValue>& Val : NodeIdArray)
+    {
+        NodeIdsToRemove.Add(Val->AsString());
+    }
+
+    FString ErrorMsg;
+    TSharedPtr<FJsonObject> ResponseJson;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UBlueprint* Blueprint = nullptr;
+
+        if (Path == TEXT("__level__"))
+        {
+            UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+            if (World)
+            {
+                Blueprint = World->GetCurrentLevel()->GetLevelScriptBlueprint();
+            }
+        }
+        else
+        {
+            Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        }
+
+        if (!Blueprint)
+        {
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        int32 RemovedCount = 0;
+        auto RemoveFromGraph = [&](UEdGraph* Graph)
+        {
+            TArray<UEdGraphNode*> NodesToRemove;
+            for (UEdGraphNode* Node : Graph->Nodes)
+            {
+                if (Node && NodeIdsToRemove.Contains(Node->NodeGuid.ToString()))
+                {
+                    NodesToRemove.Add(Node);
+                }
+            }
+
+            for (UEdGraphNode* Node : NodesToRemove)
+            {
+                for (UEdGraphPin* Pin : Node->GetAllPins())
+                {
+                    if (Pin)
+                    {
+                        Pin->BreakAllPinLinks();
+                    }
+                }
+                Graph->RemoveNode(Node);
+                RemovedCount++;
+            }
+        };
+
+        for (UEdGraph* Graph : Blueprint->UbergraphPages)
+        {
+            RemoveFromGraph(Graph);
+        }
+        for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+        {
+            RemoveFromGraph(Graph);
+        }
+
+        bool bSaved = false;
+        if (RemovedCount > 0)
+        {
+            FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+            FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+
+            // Save the blueprint asset to disk
+            FString BlueprintPath = Blueprint->GetPathName();
+            bSaved = UEditorAssetLibrary::SaveAsset(BlueprintPath);
+        }
+
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetNumberField(TEXT("removed_count"), RemovedCount);
+        Result->SetBoolField(TEXT("saved"), bSaved);
+
+        ResponseJson = MakeShareable(new FJsonObject);
+        ResponseJson->SetBoolField(TEXT("success"), true);
+        ResponseJson->SetObjectField(TEXT("result"), Result);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    FString Out;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+    FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+    return Out;
+}
+
+FString HandleSaveLevelBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    FString ErrorMsg;
+    bool bSaved = false;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        ULevel* CurrentLevel = World->GetCurrentLevel();
+        if (!CurrentLevel) { ErrorMsg = TEXT("No current level"); DoneEvent->Trigger(); return; }
+
+        ULevelScriptBlueprint* LevelBP = CurrentLevel->GetLevelScriptBlueprint();
+        if (LevelBP)
+        {
+            FBlueprintEditorUtils::MarkBlueprintAsModified(LevelBP);
+        }
+
+        UPackage* LevelPackage = CurrentLevel->GetPackage();
+        if (LevelPackage)
+        {
+            FString PackageName = LevelPackage->GetName();
+            if (!FPackageName::IsTempPackage(PackageName))
+            {
+                FEditorFileUtils::SaveLevel(CurrentLevel);
+                bSaved = true;
+            }
+            else
+            {
+                ErrorMsg = TEXT("Cannot save temp package");
+            }
+        }
+        else
+        {
+            ErrorMsg = TEXT("No package for current level");
+        }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    return TEXT("{\"success\":true,\"result\":{\"saved\":true}}");
 }
 
 #endif
