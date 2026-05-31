@@ -1,3 +1,4 @@
+#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -705,3 +706,5 @@ FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params)
 
 	return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
+
+#endif

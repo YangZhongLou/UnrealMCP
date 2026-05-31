@@ -23,7 +23,7 @@
 	"Modules": [
 		{
 			"Name": "UnrealMCP",
-			"Type": "Editor",
+			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		}
 	]

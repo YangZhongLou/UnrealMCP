@@ -37,9 +37,6 @@ public class UnrealMCP : ModuleRules
                 "Slate",
                 "SlateCore",
                 "UMG",
-                "Kismet",
-                "BlueprintGraph",
-                "MaterialEditor",
                 "RenderCore"
             }
         );
@@ -49,12 +46,14 @@ public class UnrealMCP : ModuleRules
             PrivateDependencyModuleNames.AddRange(
                 new string[]
                 {
+                    "Kismet",
+                    "BlueprintGraph",
+                    "MaterialEditor",
                     "UnrealEd",
                     "LevelEditor",
                     "EditorSubsystem",
                     "EditorScriptingUtilities",
-                    "AssetRegistry",
-                    "BlueprintGraph"
+                    "AssetRegistry"
                 }
             );
         }
