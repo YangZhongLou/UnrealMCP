@@ -18,5 +18,7 @@ public:
 private:
     FMcpJsonRpcServer* JsonRpcServer;
     TSharedPtr<FMcpProtocolAdapter> ProtocolAdapter;
+#if WITH_EDITOR
     FMCPCommandServer* CommandServer;
+#endif
 };
