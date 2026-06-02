@@ -203,8 +203,12 @@ void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
 
         {
             // BytesRead > 0 guaranteed here
+            // Null-terminate within buffer bounds so UTF8_TO_TCHAR stops correctly
+            if (BytesRead < Buffer.Num())
+            {
+                Buffer[BytesRead] = '\0';
+            }
             FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buffer.GetData())));
-            RequestStr = RequestStr.Left(BytesRead);
 
             UE_LOG(LogMCPCommandServer, Log, TEXT("Received: %s"), *RequestStr);
 
