@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Editor.h"
 #include "FileHelpers.h"
+#include "LevelEditorSubsystem.h"
 #include "Dom/JsonObject.h"
 #include "Async/Async.h"
 #include "Serialization/JsonSerializer.h"
@@ -82,6 +83,7 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
     if (!ActorName.IsEmpty())
     {
         SpawnParams.Name = FName(*ActorName);
+        SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
     }
     FString MobilityStr = Params->HasField(TEXT("mobility"))
         ? Params->GetStringField(TEXT("mobility")) : TEXT("");
@@ -306,7 +308,21 @@ FString HandleDuplicateActor(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
 {
-    FString Path = Params->GetStringField(TEXT("path"));
+    // Support both "path" and "name" parameters for compatibility
+    FString Path;
+    if (Params->HasField(TEXT("path")))
+    {
+        Path = Params->GetStringField(TEXT("path"));
+    }
+    else if (Params->HasField(TEXT("name")))
+    {
+        Path = Params->GetStringField(TEXT("name"));
+    }
+
+    if (Path.IsEmpty())
+    {
+        return TEXT("{\"success\":false,\"error\":\"Missing 'path' or 'name' parameter\"}");
+    }
 
     bool bSuccess = false;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
@@ -315,11 +331,17 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
     {
         if (GEditor)
         {
-            // Use Exec-based MAP LOAD which handles the level transition via the
-            // editor command system — more stable than calling LoadMap directly.
-            FString Command = FString::Printf(TEXT("MAP LOAD FILE=\"%s\""), *Path);
-            GEditor->Exec(nullptr, *Command);
-            bSuccess = true;
+            // Suppress UI dialogs during level load
+            bool bPrevUnattended = GIsRunningUnattendedScript;
+            GIsRunningUnattendedScript = true;
+
+            ULevelEditorSubsystem* LevelEditor = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
+            if (LevelEditor)
+            {
+                bSuccess = LevelEditor->LoadLevel(Path);
+            }
+
+            GIsRunningUnattendedScript = bPrevUnattended;
         }
         DoneEvent->Trigger();
     });
@@ -328,7 +350,18 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
     if (bSuccess)
-        return TEXT("{\"success\":true,\"result\":{\"opened\":true}}");
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("path"), Path);
+        Result->SetBoolField(TEXT("opened"), true);
+
+        FString ResultStr;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        Writer->Close();
+
+        return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+    }
     return TEXT("{\"success\":false,\"error\":\"Failed to open level\"}");
 }
 

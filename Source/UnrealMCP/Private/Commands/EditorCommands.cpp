@@ -105,6 +105,26 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
         return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
     }
 
+    // Check if level already exists — skip creation and return success
+    FString PackagePath = Path.StartsWith(TEXT("/Game/")) ? Path : TEXT("/Game/") + Path;
+    FString FilePath = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetMapPackageExtension());
+    bool bAlreadyExists = IFileManager::Get().FileExists(*FilePath);
+
+    if (bAlreadyExists)
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("path"), PackagePath);
+        Result->SetBoolField(TEXT("created"), false);
+        Result->SetBoolField(TEXT("alreadyExists"), true);
+
+        FString ResultStr;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        Writer->Close();
+
+        return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+    }
+
     bool bCreated = false;
     FString LevelPath;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
