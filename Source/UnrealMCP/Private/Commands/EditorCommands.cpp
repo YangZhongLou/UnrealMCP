@@ -224,14 +224,26 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-        FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
-
         FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
+
+        // Primary: direct viewport read (best quality for editor viewports)
+        FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
+        if (!Viewport && GEngine && GEngine->GameViewport)
+        {
+            Viewport = GEngine->GameViewport->Viewport;
+        }
 
         if (Viewport)
         {
+            if (GCurrentLevelEditingViewportClient)
+            {
+                GCurrentLevelEditingViewportClient->SetRealtime(true);
+                GCurrentLevelEditingViewportClient->Invalidate();
+            }
             FlushRenderingCommands();
+            FPlatformProcess::Sleep(0.1f);
+            FlushRenderingCommands();
+
             FIntRect CaptureRect(0, 0, Viewport->GetSizeXY().X, Viewport->GetSizeXY().Y);
             TArray<FColor> Bitmap;
             if (Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags(), CaptureRect))
@@ -242,7 +254,7 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             }
         }
 
-        // Fallback
+        // Fallback: FScreenshotRequest (works when viewport read fails, e.g. window occluded)
         if (!bSuccess)
         {
             FScreenshotRequest::RequestScreenshot(Filename, false, false);
@@ -910,6 +922,77 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
     FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
+}
+
+FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    FVector TargetLocation = FVector::ZeroVector;
+    FRotator TargetRotation = FRotator::ZeroRotator;
+
+    if (Params->HasField(TEXT("location")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
+        if (Arr.Num() >= 3)
+        {
+            TargetLocation.X = Arr[0]->AsNumber();
+            TargetLocation.Y = Arr[1]->AsNumber();
+            TargetLocation.Z = Arr[2]->AsNumber();
+        }
+    }
+
+    if (Params->HasField(TEXT("rotation")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
+        if (Arr.Num() >= 3)
+        {
+            TargetRotation.Pitch = Arr[0]->AsNumber();
+            TargetRotation.Yaw   = Arr[1]->AsNumber();
+            TargetRotation.Roll  = Arr[2]->AsNumber();
+        }
+    }
+
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        FLevelEditorViewportClient* ViewportClient = GCurrentLevelEditingViewportClient;
+        if (!ViewportClient && GEditor)
+        {
+            const TArray<FLevelEditorViewportClient*>& Clients = GEditor->GetLevelViewportClients();
+            for (FLevelEditorViewportClient* Client : Clients)
+            {
+                if (Client) { ViewportClient = Client; break; }
+            }
+        }
+
+        if (ViewportClient)
+        {
+            ViewportClient->SetViewLocation(TargetLocation);
+            ViewportClient->SetViewRotation(TargetRotation);
+            ViewportClient->Invalidate();
+        }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("location"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetLocation.X, TargetLocation.Y, TargetLocation.Z));
+    Result->SetStringField(TEXT("rotation"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetRotation.Pitch, TargetRotation.Yaw, TargetRotation.Roll));
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+    Writer->Close();
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
 
 #endif

@@ -67,6 +67,7 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
 FString HandleRemoveBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
 FString HandleSaveLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -492,6 +493,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("save_level_blueprint"))
     {
         ResultStr = HandleSaveLevelBlueprint(Params);
+    }
+    else if (Method == TEXT("set_viewport_camera"))
+    {
+        ResultStr = HandleSetViewportCamera(Params);
     }
     else
     {
