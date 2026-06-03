@@ -23,6 +23,7 @@
 #include "Async/Async.h"
 #include "Misc/PackageName.h"
 #include "HAL/FileManager.h"
+#include "Containers/Ticker.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -195,21 +196,32 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
-    bool bStopped = false;
-    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
-    AsyncTask(ENamedThreads::GameThread, [&]()
+    if (!GEditor)
     {
-        if (GEditor && GEditor->IsPlaySessionInProgress())
-        {
-            GEditor->EndPlayMap();
-            bStopped = true;
-        }
-        DoneEvent->Trigger();
-    });
-    DoneEvent->Wait();
-    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
 
-    if (bStopped)
+    bool bWasPlaying = GEditor->IsPlaySessionInProgress();
+
+    if (bWasPlaying)
+    {
+        // Delay EndPlayMap to the next engine tick via FTSTicker.
+        // Using AsyncTask dispatches into the TaskGraph queue; when EndPlayMap
+        // tears down the PIE world it destroys UObjects whose destructors
+        // trigger further TaskGraph work while the queue RecursionGuard is
+        // already held, causing an assertion failure. FTSTicker runs outside
+        // of TaskGraph processing (in FEngineLoop::Tick) so it is safe.
+        FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float) -> bool
+        {
+            if (GEditor && GEditor->IsPlaySessionInProgress())
+            {
+                GEditor->EndPlayMap();
+            }
+            return false; // Execute once only
+        }), 0.0f);
+    }
+
+    if (bWasPlaying)
         return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
     return TEXT("{\"success\":false,\"error\":\"No active play session\"}");
 }
