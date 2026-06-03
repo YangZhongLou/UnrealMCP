@@ -132,11 +132,8 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Roll)));
         ResultObj->SetArrayField(TEXT("rotation"), RotArr);
 
-        // Zoom (arm length)
-        if (USpringArmComponent* Boom = CameraPawn->GetCameraBoom())
-        {
-            ResultObj->SetNumberField(TEXT("zoom"), Boom->TargetArmLength);
-        }
+        // Zoom (target arm length — reflects the value set by MCP, not the smoothed current value)
+        ResultObj->SetNumberField(TEXT("zoom"), CameraPawn->GetCameraTargetZoom());
 
         // FOV
         ResultObj->SetNumberField(TEXT("fov"), CameraPawn->GetCameraFOV());
@@ -343,10 +340,7 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
         ResultObj->SetArrayField(TEXT("location"), LocArr);
 
-        if (USpringArmComponent* Boom = CameraPawn->GetCameraBoom())
-        {
-            ResultObj->SetNumberField(TEXT("zoom"), Boom->TargetArmLength);
-        }
+        ResultObj->SetNumberField(TEXT("zoom"), CameraPawn->GetCameraTargetZoom());
 
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
