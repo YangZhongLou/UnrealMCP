@@ -5,6 +5,9 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
+// Forward declarations from RuntimeCameraCommands.cpp
+FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params);
+
 FMcpProtocolAdapter::FMcpProtocolAdapter()
     : bInitialized(false)
 {
@@ -153,6 +156,10 @@ TSharedPtr<FJsonObject> FMcpProtocolAdapter::HandleToolsCall(
     {
         Result->SetStringField(TEXT("result"), TEXT("pong"));
         return MakeResponse(TOptional<int32>(), Result);
+    }
+    else if (ToolName == TEXT("get_runtime_camera_state"))
+    {
+        return HandleGetRuntimeCameraState(ToolParams);
     }
     else
     {
@@ -314,6 +321,25 @@ TSharedPtr<FJsonObject> FMcpProtocolAdapter::HandleModifyUmgProperty(
     ContentArray.Add(MakeShareable(new FJsonValueObject(ContentItem)));
     Result->SetArrayField(TEXT("content"), ContentArray);
     Result->SetBoolField(TEXT("isError"), !bSuccess);
+
+    return MakeResponse(TOptional<int32>(), Result);
+}
+
+TSharedPtr<FJsonObject> FMcpProtocolAdapter::HandleGetRuntimeCameraState(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+
+    FString ResponseJson = ::HandleGetRuntimeCameraState(Params);
+
+    TSharedPtr<FJsonObject> ContentItem = MakeShareable(new FJsonObject);
+    ContentItem->SetStringField(TEXT("type"), TEXT("text"));
+    ContentItem->SetStringField(TEXT("text"), ResponseJson);
+
+    TArray<TSharedPtr<FJsonValue>> ContentArray;
+    ContentArray.Add(MakeShareable(new FJsonValueObject(ContentItem)));
+    Result->SetArrayField(TEXT("content"), ContentArray);
+    Result->SetBoolField(TEXT("isError"), false);
 
     return MakeResponse(TOptional<int32>(), Result);
 }
@@ -584,6 +610,20 @@ void FMcpProtocolAdapter::RegisterTools()
         Tool->SetObjectField(TEXT("inputSchema"), Schema);
         ToolList.Add(Tool);
     }
+
+    // get_runtime_camera_state
+    {
+        TSharedPtr<FJsonObject> Tool = MakeShareable(new FJsonObject);
+        Tool->SetStringField(TEXT("name"), TEXT("get_runtime_camera_state"));
+        Tool->SetStringField(TEXT("description"), TEXT("Get the current runtime camera state (position, zoom, FOV, DOF, etc.)"));
+
+        TSharedPtr<FJsonObject> Schema = MakeShareable(new FJsonObject);
+        Schema->SetStringField(TEXT("type"), TEXT("object"));
+        Schema->SetObjectField(TEXT("properties"), MakeShareable(new FJsonObject));
+        Tool->SetObjectField(TEXT("inputSchema"), Schema);
+        ToolList.Add(Tool);
+    }
+
 }
 
 void FMcpProtocolAdapter::RegisterResources()

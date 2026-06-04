@@ -32,6 +32,9 @@ private:
     TSharedPtr<FJsonObject> HandleModifyUmgProperty(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetUmgHierarchy(const TSharedPtr<FJsonObject>& Params);
 
+    // Runtime camera tools
+    TSharedPtr<FJsonObject> HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params);
+
     TSharedPtr<FJsonObject> MakeResponse(const TOptional<int32>& Id, const TSharedPtr<FJsonObject>& Result);
     TSharedPtr<FJsonObject> MakeErrorResponse(const TOptional<int32>& Id, int32 Code, const FString& Message);
 
