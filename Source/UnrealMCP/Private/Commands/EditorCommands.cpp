@@ -238,8 +238,21 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     {
         FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
 
-        // Primary: direct viewport read (best quality for editor viewports)
-        FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
+        // ── Strategy 1: PIE viewport (if play session is active) ──
+        FViewport* Viewport = nullptr;
+        bool bIsPIE = GEditor && GEditor->IsPlaySessionInProgress();
+        if (bIsPIE && GEngine && GEngine->GameViewport)
+        {
+            Viewport = GEngine->GameViewport->Viewport;
+        }
+
+        // ── Strategy 2: Editor viewport (fallback) ──
+        if (!Viewport && GEditor)
+        {
+            Viewport = GEditor->GetActiveViewport();
+        }
+
+        // ── Strategy 3: Any available viewport ──
         if (!Viewport && GEngine && GEngine->GameViewport)
         {
             Viewport = GEngine->GameViewport->Viewport;
@@ -247,11 +260,18 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
 
         if (Viewport)
         {
-            if (GCurrentLevelEditingViewportClient)
+            // Force realtime rendering and invalidate to ensure a fresh frame
+            if (bIsPIE && GEngine && GEngine->GameViewport)
+            {
+                GEngine->GameViewport->GetGameViewport()->SetRealtime(true);
+                GEngine->GameViewport->GetGameViewport()->Invalidate();
+            }
+            else if (GCurrentLevelEditingViewportClient)
             {
                 GCurrentLevelEditingViewportClient->SetRealtime(true);
                 GCurrentLevelEditingViewportClient->Invalidate();
             }
+
             FlushRenderingCommands();
             FPlatformProcess::Sleep(0.1f);
             FlushRenderingCommands();
@@ -266,7 +286,7 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             }
         }
 
-        // Fallback: FScreenshotRequest (works when viewport read fails, e.g. window occluded)
+        // ── Fallback: FScreenshotRequest (works when viewport read fails, e.g. window occluded) ──
         if (!bSuccess)
         {
             FScreenshotRequest::RequestScreenshot(Filename, false, false);
