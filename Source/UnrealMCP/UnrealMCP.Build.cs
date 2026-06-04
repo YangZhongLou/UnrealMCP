@@ -38,7 +38,7 @@ public class UnrealMCP : ModuleRules
                 "SlateCore",
                 "UMG",
                 "RenderCore",
-                "CameraPlayground"
+                "IsometricCamera"
             }
         );
 

@@ -18,6 +18,10 @@
 		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
+		},
+		{
+			"Name": "IsometricCamera",
+			"Enabled": true
 		}
 	],
 	"Modules": [

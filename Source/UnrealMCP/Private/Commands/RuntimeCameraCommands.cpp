@@ -9,9 +9,9 @@
 #include "Serialization/JsonWriter.h"
 #include "Async/Async.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "CameraPlayground/IsometricCameraPawn.h"
-#include "CameraPlayground/CameraRigActor.h"
-#include "CameraPlayground/CameraSwitcher.h"
+#include "IsometricCameraPawn.h"
+#include "CameraRigActor.h"
+#include "CameraSwitcher.h"
 
 static UWorld* GetPlayWorld()
 {
