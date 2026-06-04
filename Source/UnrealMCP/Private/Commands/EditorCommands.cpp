@@ -8,6 +8,7 @@
 #include "InputCoreTypes.h"
 #include "Components/LightComponent.h"
 #include "LevelEditorViewport.h"
+#include "Slate/SceneViewport.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Misc/FileHelper.h"
@@ -261,12 +262,8 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         if (Viewport)
         {
             // Force realtime rendering and invalidate to ensure a fresh frame
-            if (bIsPIE && GEngine && GEngine->GameViewport)
-            {
-                GEngine->GameViewport->GetGameViewport()->SetRealtime(true);
-                GEngine->GameViewport->GetGameViewport()->Invalidate();
-            }
-            else if (GCurrentLevelEditingViewportClient)
+            // PIE viewport is already realtime; only editor viewports need explicit SetRealtime
+            if (!bIsPIE && GCurrentLevelEditingViewportClient)
             {
                 GCurrentLevelEditingViewportClient->SetRealtime(true);
                 GCurrentLevelEditingViewportClient->Invalidate();

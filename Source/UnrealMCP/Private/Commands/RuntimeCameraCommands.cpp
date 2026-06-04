@@ -1,13 +1,12 @@
-#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Kismet/GameplayStatics.h"
-#include "Editor.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Async/Async.h"
+#include "EngineUtils.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "IsometricCameraPawn.h"
 #include "CameraRigActor.h"
@@ -15,6 +14,7 @@
 
 static UWorld* GetPlayWorld()
 {
+#if WITH_EDITOR
     if (GEditor)
     {
         for (const FWorldContext& Context : GEditor->GetWorldContexts())
@@ -26,6 +26,7 @@ static UWorld* GetPlayWorld()
         }
         return GEditor->GetEditorWorldContext().World();
     }
+#endif
     return GEngine ? GEngine->GetCurrentPlayWorld() : nullptr;
 }
 
@@ -975,5 +976,3 @@ FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>&
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
     return ResultStr;
 }
-
-#endif

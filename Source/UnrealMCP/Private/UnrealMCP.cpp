@@ -26,6 +26,7 @@ void FUnrealMCPModule::StartupModule()
         UE_LOG(LogUnrealMCP, Error, TEXT("Failed to start MCP JSON-RPC Server"));
     }
 
+#if WITH_EDITOR
     CommandServer = new FMCPCommandServer();
     if (CommandServer->StartServer(13378))
     {
@@ -35,6 +36,7 @@ void FUnrealMCPModule::StartupModule()
     {
         UE_LOG(LogUnrealMCP, Error, TEXT("Failed to start MCP Command Server"));
     }
+#endif
 
     FLogCaptureDevice::Get().Start();
 }
@@ -45,12 +47,14 @@ void FUnrealMCPModule::ShutdownModule()
 
     FLogCaptureDevice::Get().Stop();
 
+#if WITH_EDITOR
     if (CommandServer)
     {
         CommandServer->StopServer();
         delete CommandServer;
         CommandServer = nullptr;
     }
+#endif
 
     if (JsonRpcServer)
     {
