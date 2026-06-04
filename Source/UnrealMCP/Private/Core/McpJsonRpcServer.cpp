@@ -245,7 +245,9 @@ bool FMcpJsonRpcServer::ReadFrame(FSocket* ClientSocket, TArray<uint8>& OutFrame
 
 bool FMcpJsonRpcServer::ParseMessage(const TArray<uint8>& Frame, FMcpJsonRpcMessage& OutMessage)
 {
-    const FString JsonStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Frame.GetData())));
+    TArray<uint8> NullTerminatedFrame = Frame;
+    NullTerminatedFrame.Add(0);
+    const FString JsonStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(NullTerminatedFrame.GetData())));
 
     TSharedPtr<FJsonObject> JsonObj;
     TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
