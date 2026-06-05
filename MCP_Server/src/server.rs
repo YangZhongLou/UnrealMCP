@@ -461,7 +461,8 @@ impl UnrealMcpServer {
     #[tool(description = "Create a new material asset. Supports shading_model='subsurface_profile' for jade/SSS, \
                            'default_lit', 'unlit', 'subsurface', 'clear_coat', 'thin_translucent'. \
                            Optionally set blend_mode, base_color [r,g,b], metallic, roughness, specular. \
-                           Set reuse=true to silently succeed if the material already exists.")]
+                           Set reuse=true to silently succeed if the material already exists. \
+                           Math ops: add, subtract, multiply, divide, power, clamp, sine, cosine via math array.")]
     async fn create_material(
         &self,
         #[tool(param)] path: String,
@@ -472,6 +473,7 @@ impl UnrealMcpServer {
         #[tool(param)] roughness: Option<f64>,
         #[tool(param)] specular: Option<f64>,
         #[tool(param)] reuse: Option<bool>,
+        #[tool(param)] math: Option<serde_json::Value>,
     ) -> String {
         let mut p = json!({"path": path});
         if let Some(v) = shading_model { p["shadingModel"] = json!(v); }
@@ -481,6 +483,7 @@ impl UnrealMcpServer {
         if let Some(v) = roughness { p["roughness"] = json!(v); }
         if let Some(v) = specular { p["specular"] = json!(v); }
         if let Some(v) = reuse { p["reuse"] = json!(v); }
+        if let Some(v) = math { p["math"] = json!(v); }
         self.call("create_material", p).await
     }
 

@@ -167,7 +167,11 @@ async fn test_create_material() {
         "shadingModel": "subsurface_profile",
         "baseColor": [0.1, 0.8, 0.3],
         "roughness": 0.3,
-        "reuse": true
+        "reuse": true,
+        "math": [
+            {"type": "clamp", "inputs": [{"const": 0.2}], "min": 0.0, "max": 1.0, "output": "metallic"},
+            {"type": "multiply", "inputs": [{"const": 2.0}, {"node": 0}], "output": "specular"}
+        ]
     })).await.unwrap();
 
     assert_eq!(response["success"], true);
