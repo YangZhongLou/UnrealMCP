@@ -88,8 +88,13 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
         DoneEvent->Trigger();
     });
 
-    DoneEvent->Wait();
+    bool bCompleted = DoneEvent->Wait(5000);
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!bCompleted)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Save level timed out (5s)\"}");
+    }
 
     if (bSaved)
     {

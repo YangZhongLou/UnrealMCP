@@ -20,7 +20,7 @@
 			"Enabled": true
 		},
 		{
-			"Name": "IsometricCamera",
+			"Name": "CameraSystem",
 			"Enabled": true
 		}
 	],

@@ -12,9 +12,13 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    info!("Starting Unreal MCP Server...");
+    let unreal_addr = std::env::var("UNREAL_MCP_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:13377".to_string());
 
-    let service = UnrealMcpServer::new("127.0.0.1:13377").await?;
+    info!("Starting Unreal MCP Server...");
+    info!("Connecting to Unreal at: {}", unreal_addr);
+
+    let service = UnrealMcpServer::new(&unreal_addr).await?;
     let transport = rmcp::transport::stdio();
     let server = service.serve(transport).await?;
 

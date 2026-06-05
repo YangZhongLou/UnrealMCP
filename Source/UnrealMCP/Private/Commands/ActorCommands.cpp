@@ -93,6 +93,29 @@ FString HandleSpawnActor(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
+        // Destroy existing actor with the same name to avoid spawn conflict / crash
+        if (!ActorName.IsEmpty())
+        {
+            AActor** Existing = SpawnedActors.Find(ActorName);
+            if (!Existing)
+            {
+                for (TActorIterator<AActor> It(World); It; ++It)
+                {
+                    if (It->GetName() == ActorName)
+                    {
+                        SpawnedActors.Add(ActorName, *It);
+                        Existing = SpawnedActors.Find(ActorName);
+                        break;
+                    }
+                }
+            }
+            if (Existing && *Existing)
+            {
+                (*Existing)->Destroy();
+                SpawnedActors.Remove(ActorName);
+            }
+        }
+
         SpawnedActor = World->SpawnActor<AActor>(ActorClass, Location, FRotator::ZeroRotator, SpawnParams);
         if (SpawnedActor && !MobilityStr.IsEmpty())
         {

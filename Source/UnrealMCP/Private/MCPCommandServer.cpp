@@ -259,7 +259,22 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
     FString ResultStr;
 
-    if (Method == TEXT("get_editor_info"))
+    if (Method == TEXT("check_unreal_connection"))
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetBoolField(TEXT("connected"), true);
+        Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+        Result->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+
+        TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+        Response->SetStringField(TEXT("id"), RequestId);
+        Response->SetBoolField(TEXT("success"), true);
+        Response->SetObjectField(TEXT("result"), Result);
+
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    }
+    else if (Method == TEXT("get_editor_info"))
     {
         TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
         Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());

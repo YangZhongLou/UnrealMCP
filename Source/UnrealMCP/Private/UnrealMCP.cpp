@@ -8,18 +8,31 @@ DEFINE_LOG_CATEGORY(LogUnrealMCP);
 
 #define LOCTEXT_NAMESPACE "FUnrealMCPModule"
 
+static int32 GetConfigInt(const TCHAR* Section, const TCHAR* Key, int32 DefaultValue)
+{
+    int32 Value = DefaultValue;
+    if (GConfig)
+    {
+        GConfig->GetInt(Section, Key, Value, GEngineIni);
+    }
+    return Value;
+}
+
 void FUnrealMCPModule::StartupModule()
 {
     UE_LOG(LogUnrealMCP, Log, TEXT("UnrealMCP module starting up..."));
+
+    const int32 JsonRpcPort = GetConfigInt(TEXT("UnrealMCP"), TEXT("JsonRpcServerPort"), 13379);
+    const int32 CommandPort = GetConfigInt(TEXT("UnrealMCP"), TEXT("CommandServerPort"), 13377);
 
     JsonRpcServer = new FMcpJsonRpcServer();
 
     ProtocolAdapter = MakeShareable(new FMcpProtocolAdapter());
     JsonRpcServer->SetProtocolAdapter(ProtocolAdapter);
 
-    if (JsonRpcServer->StartServer(13377))
+    if (JsonRpcServer->StartServer(JsonRpcPort))
     {
-        UE_LOG(LogUnrealMCP, Log, TEXT("MCP JSON-RPC Server started on port 13377"));
+        UE_LOG(LogUnrealMCP, Log, TEXT("MCP JSON-RPC Server started on port %d"), JsonRpcPort);
     }
     else
     {
@@ -28,9 +41,9 @@ void FUnrealMCPModule::StartupModule()
 
 #if WITH_EDITOR
     CommandServer = new FMCPCommandServer();
-    if (CommandServer->StartServer(13378))
+    if (CommandServer->StartServer(CommandPort))
     {
-        UE_LOG(LogUnrealMCP, Log, TEXT("MCP Command Server started on port 13378"));
+        UE_LOG(LogUnrealMCP, Log, TEXT("MCP Command Server started on port %d"), CommandPort);
     }
     else
     {
