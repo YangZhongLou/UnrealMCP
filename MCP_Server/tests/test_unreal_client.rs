@@ -249,13 +249,11 @@ async fn test_set_runtime_camera_dof() {
 
     let mut client = UnrealClient::new("127.0.0.1:13392");
     let response = client.send_command("set_runtime_camera_dof", json!({
-        "focalDistance": 500.0,
-        "focalRegion": 200.0
+        "focalDistance": 500.0
     })).await.unwrap();
 
     assert_eq!(response["success"], true);
     assert_eq!(response["result"]["focal_distance"], 500.0);
-    assert_eq!(response["result"]["focal_region"], 200.0);
 
     mock.stop().await;
 }

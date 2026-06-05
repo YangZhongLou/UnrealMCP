@@ -148,7 +148,6 @@ impl MockUnrealServer {
                                             "zoom": 2500.0,
                                             "fov": 90.0,
                                             "dof_focal_distance": 10000.0,
-                                            "dof_focal_region": 0.0,
                                             "exposure": 0.0,
                                             "bloom": 0.675,
                                             "focalLength": 50.0,
@@ -165,8 +164,7 @@ impl MockUnrealServer {
                                         "id": req["id"],
                                         "success": true,
                                         "result": {
-                                            "focal_distance": req["params"]["focalDistance"],
-                                            "focal_region": req["params"].get("focalRegion").unwrap_or(&json!(0.0))
+                                            "focal_distance": req["params"]["focalDistance"]
                                         }
                                     }),
                                     "set_runtime_camera_post_process" => json!({

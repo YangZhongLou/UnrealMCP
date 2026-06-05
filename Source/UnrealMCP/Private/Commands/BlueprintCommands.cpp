@@ -6,6 +6,7 @@
 #include "EditorAssetLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "FileHelpers.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "K2Node_CallFunction.h"

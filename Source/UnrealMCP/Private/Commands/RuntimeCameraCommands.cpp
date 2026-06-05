@@ -8,9 +8,13 @@
 #include "Async/Async.h"
 #include "EngineUtils.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "IsometricCameraPawn.h"
-#include "CameraRigActor.h"
-#include "CameraSwitcher.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "CameraRig_Rail.h"
+#include "CineCameraComponent.h"
+#include "Components/SplineComponent.h"
+#include "UnrealMCP.h"
 
 static UWorld* GetPlayWorld()
 {
@@ -30,24 +34,23 @@ static UWorld* GetPlayWorld()
     return GEngine ? GEngine->GetCurrentPlayWorld() : nullptr;
 }
 
-static AIsometricCameraPawn* FindRuntimeCameraPawn(UWorld* World)
+/** Find the current runtime camera target: PlayerController ViewTarget, or the first ACameraActor in the scene. */
+static AActor* FindRuntimeCameraTarget(UWorld* World)
 {
     if (!World)
     {
         return nullptr;
     }
 
-    // Try player controller first
     if (APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0))
     {
-        if (AIsometricCameraPawn* Pawn = Cast<AIsometricCameraPawn>(PC->GetPawn()))
+        if (AActor* ViewTarget = PC->GetViewTarget())
         {
-            return Pawn;
+            return ViewTarget;
         }
     }
 
-    // Fallback: iterate all pawns
-    for (TActorIterator<AIsometricCameraPawn> It(World); It; ++It)
+    for (TActorIterator<ACameraActor> It(World); It; ++It)
     {
         return *It;
     }
@@ -55,15 +58,86 @@ static AIsometricCameraPawn* FindRuntimeCameraPawn(UWorld* World)
     return nullptr;
 }
 
-static ACameraSwitcher* FindCameraSwitcher(UWorld* World)
+static UCameraComponent* GetCameraComponent(AActor* Actor)
+{
+    if (!Actor)
+    {
+        return nullptr;
+    }
+    if (UCineCameraComponent* CineCam = Actor->FindComponentByClass<UCineCameraComponent>())
+    {
+        return CineCam;
+    }
+    return Actor->FindComponentByClass<UCameraComponent>();
+}
+
+static USpringArmComponent* GetSpringArmComponent(AActor* Actor)
+{
+    if (!Actor)
+    {
+        return nullptr;
+    }
+    return Actor->FindComponentByClass<USpringArmComponent>();
+}
+
+static AActor* FindActorByName(UWorld* World, const FString& Name)
 {
     if (!World)
     {
         return nullptr;
     }
-    for (TActorIterator<ACameraSwitcher> It(World); It; ++It)
+    for (TActorIterator<AActor> It(World); It; ++It)
     {
-        return *It;
+        if (It->GetActorNameOrLabel() == Name || It->GetName() == Name)
+        {
+            return *It;
+        }
+    }
+    return nullptr;
+}
+
+static ACameraActor* FindCameraActorByName(UWorld* World, const FString& Name)
+{
+    if (!World)
+    {
+        return nullptr;
+    }
+    for (TActorIterator<ACameraActor> It(World); It; ++It)
+    {
+        if (It->GetActorNameOrLabel() == Name || It->GetName() == Name)
+        {
+            return *It;
+        }
+    }
+    return nullptr;
+}
+
+static TArray<ACameraActor*> FindAllCameraActors(UWorld* World)
+{
+    TArray<ACameraActor*> Cameras;
+    if (!World)
+    {
+        return Cameras;
+    }
+    for (TActorIterator<ACameraActor> It(World); It; ++It)
+    {
+        Cameras.Add(*It);
+    }
+    return Cameras;
+}
+
+static ACameraRig_Rail* FindCameraRigRailByName(UWorld* World, const FString& Name)
+{
+    if (!World)
+    {
+        return nullptr;
+    }
+    for (TActorIterator<ACameraRig_Rail> It(World); It; ++It)
+    {
+        if (It->GetActorNameOrLabel() == Name || It->GetName() == Name)
+        {
+            return *It;
+        }
     }
     return nullptr;
 }
@@ -106,11 +180,13 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GetPlayWorld();
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(World);
+        AActor* Target = FindRuntimeCameraTarget(World);
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+        USpringArmComponent* SpringArm = GetSpringArmComponent(Target);
 
-        if (!CameraPawn)
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
@@ -118,7 +194,7 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
 
         // Location
-        FVector Loc = CameraPawn->GetActorLocation();
+        FVector Loc = Target->GetActorLocation();
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
@@ -126,36 +202,43 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
         ResultObj->SetArrayField(TEXT("location"), LocArr);
 
         // Rotation
-        FRotator Rot = CameraPawn->GetActorRotation();
+        FRotator Rot = Target->GetActorRotation();
         TArray<TSharedPtr<FJsonValue>> RotArr;
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Pitch)));
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Yaw)));
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Roll)));
         ResultObj->SetArrayField(TEXT("rotation"), RotArr);
 
-        // Zoom (target arm length — reflects the value set by MCP, not the smoothed current value)
-        ResultObj->SetNumberField(TEXT("zoom"), CameraPawn->GetCameraTargetZoom());
+        // Zoom (SpringArm target arm length)
+        ResultObj->SetNumberField(TEXT("zoom"), SpringArm ? SpringArm->TargetArmLength : 0.0);
 
         // FOV
-        ResultObj->SetNumberField(TEXT("fov"), CameraPawn->GetCameraFOV());
-
-        // DOF
-        ResultObj->SetNumberField(TEXT("dof_focal_distance"), CameraPawn->GetDOFFocalDistance());
-        ResultObj->SetNumberField(TEXT("dof_focal_region"), CameraPawn->GetDOFFocalRegion());
+        ResultObj->SetNumberField(TEXT("fov"), CamComp ? CamComp->FieldOfView : 90.0);
 
         // Post-process
-        ResultObj->SetNumberField(TEXT("exposure"), CameraPawn->GetPostProcessExposure());
-        ResultObj->SetNumberField(TEXT("bloom"), CameraPawn->GetPostProcessBloom());
+        ResultObj->SetNumberField(TEXT("exposure"), CamComp ? CamComp->PostProcessSettings.AutoExposureBias : 0.0);
+        ResultObj->SetNumberField(TEXT("bloom"), CamComp ? CamComp->PostProcessSettings.BloomIntensity : 0.0);
 
-        // CineCamera
-        ResultObj->SetNumberField(TEXT("focalLength"), CameraPawn->GetCameraFocalLength());
-        ResultObj->SetNumberField(TEXT("aperture"), CameraPawn->GetCameraAperture());
-        ResultObj->SetNumberField(TEXT("focusDistance"), CameraPawn->GetCameraFocusDistance());
+        // CineCamera (includes DOF & focus)
+        if (UCineCameraComponent* CineCam = Cast<UCineCameraComponent>(CamComp))
+        {
+            ResultObj->SetNumberField(TEXT("focalLength"), CineCam->CurrentFocalLength);
+            ResultObj->SetNumberField(TEXT("aperture"), CineCam->CurrentAperture);
+            ResultObj->SetNumberField(TEXT("dof_focal_distance"), CineCam->FocusSettings.ManualFocusDistance);
+            ResultObj->SetNumberField(TEXT("focusDistance"), CineCam->FocusSettings.ManualFocusDistance);
+        }
+        else
+        {
+            ResultObj->SetNumberField(TEXT("focalLength"), 0.0);
+            ResultObj->SetNumberField(TEXT("aperture"), 0.0);
+            ResultObj->SetNumberField(TEXT("dof_focal_distance"), 0.0);
+            ResultObj->SetNumberField(TEXT("focusDistance"), 0.0);
+        }
 
         // Advanced Post-process
-        ResultObj->SetNumberField(TEXT("motionBlur"), CameraPawn->GetPostProcessMotionBlur());
-        ResultObj->SetNumberField(TEXT("vignette"), CameraPawn->GetPostProcessVignette());
-        ResultObj->SetNumberField(TEXT("chromaticAberration"), CameraPawn->GetPostProcessChromaticAberration());
+        ResultObj->SetNumberField(TEXT("motionBlur"), CamComp ? CamComp->PostProcessSettings.MotionBlurAmount : 0.0);
+        ResultObj->SetNumberField(TEXT("vignette"), CamComp ? CamComp->PostProcessSettings.VignetteIntensity : 0.0);
+        ResultObj->SetNumberField(TEXT("chromaticAberration"), CamComp ? CamComp->PostProcessSettings.SceneFringeIntensity : 0.0);
 
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
@@ -184,18 +267,26 @@ FString HandleSetRuntimeCameraFOV(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!CamComp)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No CameraComponent found on target"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetCameraTargetFOV(static_cast<float>(FOV));
+        CamComp->SetFieldOfView(static_cast<float>(FOV));
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("fov"), CameraPawn->GetCameraFOV());
+        ResultObj->SetNumberField(TEXT("fov"), CamComp->FieldOfView);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -217,30 +308,34 @@ FString HandleSetRuntimeCameraDOF(const TSharedPtr<FJsonObject>& Params)
     }
 
     double FocalDistance = Params->GetNumberField(TEXT("focalDistance"));
-    double FocalRegion = 0.0;
-    if (Params->HasField(TEXT("focalRegion")))
-    {
-        FocalRegion = Params->GetNumberField(TEXT("focalRegion"));
-    }
 
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     FString ResultStr;
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        UCineCameraComponent* CineCam = Cast<UCineCameraComponent>(CamComp);
+        if (!CineCam)
+        {
+            ResultStr = BuildErrorResponse(TEXT("CineCameraComponent required for DOF"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetCameraTargetDOF(static_cast<float>(FocalDistance), static_cast<float>(FocalRegion));
+        CineCam->FocusSettings.FocusMethod = ECameraFocusMethod::Manual;
+        CineCam->FocusSettings.ManualFocusDistance = static_cast<float>(FocalDistance);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("focal_distance"), CameraPawn->GetDOFFocalDistance());
-        ResultObj->SetNumberField(TEXT("focal_region"), CameraPawn->GetDOFFocalRegion());
+        ResultObj->SetNumberField(TEXT("focal_distance"), CineCam->FocusSettings.ManualFocusDistance);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -261,10 +356,18 @@ FString HandleSetRuntimeCameraPostProcess(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!CamComp)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No CameraComponent found on target"), RequestId);
             DoneEvent->Trigger();
             return;
         }
@@ -274,15 +377,17 @@ FString HandleSetRuntimeCameraPostProcess(const TSharedPtr<FJsonObject>& Params)
         if (Params->HasField(TEXT("exposure")))
         {
             double Exposure = Params->GetNumberField(TEXT("exposure"));
-            CameraPawn->SetPostProcessExposure(static_cast<float>(Exposure));
-            ResultObj->SetNumberField(TEXT("exposure"), CameraPawn->GetPostProcessExposure());
+            CamComp->PostProcessSettings.bOverride_AutoExposureBias = true;
+            CamComp->PostProcessSettings.AutoExposureBias = static_cast<float>(Exposure);
+            ResultObj->SetNumberField(TEXT("exposure"), CamComp->PostProcessSettings.AutoExposureBias);
         }
 
         if (Params->HasField(TEXT("bloom")))
         {
             double Bloom = Params->GetNumberField(TEXT("bloom"));
-            CameraPawn->SetPostProcessBloom(static_cast<float>(Bloom));
-            ResultObj->SetNumberField(TEXT("bloom"), CameraPawn->GetPostProcessBloom());
+            CamComp->PostProcessSettings.bOverride_BloomIntensity = true;
+            CamComp->PostProcessSettings.BloomIntensity = static_cast<float>(Bloom);
+            ResultObj->SetNumberField(TEXT("bloom"), CamComp->PostProcessSettings.BloomIntensity);
         }
 
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
@@ -305,10 +410,12 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        USpringArmComponent* SpringArm = GetSpringArmComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
@@ -318,30 +425,28 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
             const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
             if (Arr.Num() >= 3)
             {
-                FVector NewLocation(
-                    Arr[0]->AsNumber(),
-                    Arr[1]->AsNumber(),
-                    Arr[2]->AsNumber()
-                );
-                CameraPawn->SetCameraTargetLocation(NewLocation);
+                FVector NewLocation(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+                Target->SetActorLocation(NewLocation);
             }
         }
 
         if (Params->HasField(TEXT("zoom")))
         {
             double Zoom = Params->GetNumberField(TEXT("zoom"));
-            CameraPawn->SetCameraTargetZoom(static_cast<float>(Zoom));
+            if (SpringArm)
+            {
+                SpringArm->TargetArmLength = static_cast<float>(Zoom);
+            }
         }
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        FVector Loc = CameraPawn->GetActorLocation();
+        FVector Loc = Target->GetActorLocation();
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
         ResultObj->SetArrayField(TEXT("location"), LocArr);
-
-        ResultObj->SetNumberField(TEXT("zoom"), CameraPawn->GetCameraTargetZoom());
+        ResultObj->SetNumberField(TEXT("zoom"), SpringArm ? SpringArm->TargetArmLength : 0.0);
 
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
@@ -371,25 +476,16 @@ FString HandleFocusRuntimeCameraOnActor(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GetPlayWorld();
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(World);
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(World);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        // Find target actor
-        AActor* TargetActor = nullptr;
-        for (TActorIterator<AActor> It(World); It; ++It)
-        {
-            if (It->GetName() == ActorName)
-            {
-                TargetActor = *It;
-                break;
-            }
-        }
-
+        AActor* TargetActor = FindActorByName(World, ActorName);
         if (!TargetActor)
         {
             ResultStr = BuildErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *ActorName), RequestId);
@@ -397,11 +493,11 @@ FString HandleFocusRuntimeCameraOnActor(const TSharedPtr<FJsonObject>& Params)
             return;
         }
 
-        FVector TargetLocation = TargetActor->GetActorLocation();
-        CameraPawn->SetCameraTargetLocation(TargetLocation);
+        Target->SetActorLocation(TargetActor->GetActorLocation());
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         ResultObj->SetStringField(TEXT("actor_name"), ActorName);
+        FVector TargetLocation = TargetActor->GetActorLocation();
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(TargetLocation.X)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(TargetLocation.Y)));
@@ -435,18 +531,28 @@ FString HandleSetRuntimeCameraFocalLength(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetCameraFocalLength(static_cast<float>(FocalLength));
+        UCineCameraComponent* CineCam = Cast<UCineCameraComponent>(CamComp);
+        if (!CineCam)
+        {
+            ResultStr = BuildErrorResponse(TEXT("CineCameraComponent required for focal length"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        CineCam->CurrentFocalLength = static_cast<float>(FocalLength);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("focalLength"), CameraPawn->GetCameraFocalLength());
+        ResultObj->SetNumberField(TEXT("focalLength"), CineCam->CurrentFocalLength);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -474,18 +580,28 @@ FString HandleSetRuntimeCameraAperture(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetCameraAperture(static_cast<float>(Aperture));
+        UCineCameraComponent* CineCam = Cast<UCineCameraComponent>(CamComp);
+        if (!CineCam)
+        {
+            ResultStr = BuildErrorResponse(TEXT("CineCameraComponent required for aperture"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        CineCam->CurrentAperture = static_cast<float>(Aperture);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("aperture"), CameraPawn->GetCameraAperture());
+        ResultObj->SetNumberField(TEXT("aperture"), CineCam->CurrentAperture);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -513,18 +629,28 @@ FString HandleSetRuntimeCameraFocusDistance(const TSharedPtr<FJsonObject>& Param
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        UCineCameraComponent* CineCam = Cast<UCineCameraComponent>(CamComp);
+        if (!CineCam)
+        {
+            ResultStr = BuildErrorResponse(TEXT("CineCameraComponent required for focus distance"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetCameraFocusDistance(static_cast<float>(FocusDistance));
+        CineCam->FocusSettings.FocusMethod = ECameraFocusMethod::Manual;
+        CineCam->FocusSettings.ManualFocusDistance = static_cast<float>(FocusDistance);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("focusDistance"), CameraPawn->GetCameraFocusDistance());
+        ResultObj->SetNumberField(TEXT("focusDistance"), CineCam->FocusSettings.ManualFocusDistance);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -553,33 +679,41 @@ FString HandleStartCameraRig(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GetPlayWorld();
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(World);
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(World);
+        ACameraRig_Rail* Rail = FindCameraRigRailByName(World, RigName);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!Rail)
+        {
+            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRig_Rail not found: %s"), *RigName), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        // Find rig actor
-        ACameraRigActor* RigActor = nullptr;
-        for (TActorIterator<ACameraRigActor> It(World); It; ++It)
+        bool bFound = false;
+        for (FCameraRigPlayback& State : GActiveCameraRigPlaybacks)
         {
-            if (It->GetName() == RigName)
+            if (State.Rail.Get() == Rail)
             {
-                RigActor = *It;
+                State.AttachedActor = Target;
+                State.bIsPlaying = true;
+                bFound = true;
                 break;
             }
         }
-
-        if (!RigActor)
+        if (!bFound)
         {
-            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRigActor not found: %s"), *RigName), RequestId);
-            DoneEvent->Trigger();
-            return;
+            FCameraRigPlayback NewState;
+            NewState.Rail = Rail;
+            NewState.AttachedActor = Target;
+            NewState.bIsPlaying = true;
+            GActiveCameraRigPlaybacks.Add(NewState);
         }
-
-        RigActor->StartPlayback(CameraPawn);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         ResultObj->SetStringField(TEXT("rig_name"), RigName);
@@ -612,24 +746,23 @@ FString HandleStopCameraRig(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GetPlayWorld();
-        ACameraRigActor* RigActor = nullptr;
-        for (TActorIterator<ACameraRigActor> It(World); It; ++It)
-        {
-            if (It->GetName() == RigName)
-            {
-                RigActor = *It;
-                break;
-            }
-        }
+        ACameraRig_Rail* Rail = FindCameraRigRailByName(World, RigName);
 
-        if (!RigActor)
+        if (!Rail)
         {
-            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRigActor not found: %s"), *RigName), RequestId);
+            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRig_Rail not found: %s"), *RigName), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        RigActor->StopPlayback();
+        for (FCameraRigPlayback& State : GActiveCameraRigPlaybacks)
+        {
+            if (State.Rail.Get() == Rail)
+            {
+                State.bIsPlaying = false;
+                break;
+            }
+        }
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         ResultObj->SetStringField(TEXT("rig_name"), RigName);
@@ -667,28 +800,41 @@ FString HandleSetCameraRigSpeed(const TSharedPtr<FJsonObject>& Params)
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
         UWorld* World = GetPlayWorld();
-        ACameraRigActor* RigActor = nullptr;
-        for (TActorIterator<ACameraRigActor> It(World); It; ++It)
-        {
-            if (It->GetName() == RigName)
-            {
-                RigActor = *It;
-                break;
-            }
-        }
+        ACameraRig_Rail* Rail = FindCameraRigRailByName(World, RigName);
 
-        if (!RigActor)
+        if (!Rail)
         {
-            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRigActor not found: %s"), *RigName), RequestId);
+            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraRig_Rail not found: %s"), *RigName), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        RigActor->SetPlaybackSpeed(static_cast<float>(Speed));
+        float CurrentSpeed = 0.0f;
+        bool bFound = false;
+        for (FCameraRigPlayback& State : GActiveCameraRigPlaybacks)
+        {
+            if (State.Rail.Get() == Rail)
+            {
+                State.Speed = static_cast<float>(Speed);
+                CurrentSpeed = State.Speed;
+                bFound = true;
+                break;
+            }
+        }
+        if (!bFound)
+        {
+            // Create a stopped entry so speed is recorded for next start
+            FCameraRigPlayback NewState;
+            NewState.Rail = Rail;
+            NewState.Speed = static_cast<float>(Speed);
+            NewState.bIsPlaying = false;
+            GActiveCameraRigPlaybacks.Add(NewState);
+            CurrentSpeed = NewState.Speed;
+        }
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         ResultObj->SetStringField(TEXT("rig_name"), RigName);
-        ResultObj->SetNumberField(TEXT("speed"), RigActor->GetPlaybackSpeed());
+        ResultObj->SetNumberField(TEXT("speed"), CurrentSpeed);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -721,20 +867,29 @@ FString HandleSwitchCamera(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ACameraSwitcher* Switcher = FindCameraSwitcher(GetPlayWorld());
-        if (!Switcher)
+        UWorld* World = GetPlayWorld();
+        ACameraActor* CameraActor = FindCameraActorByName(World, CameraName);
+        APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+
+        if (!CameraActor)
         {
-            ResultStr = BuildErrorResponse(TEXT("CameraSwitcher not found"), RequestId);
+            ResultStr = BuildErrorResponse(FString::Printf(TEXT("CameraActor not found: %s"), *CameraName), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!PC)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No PlayerController found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        Switcher->SwitchToCamera(CameraName, static_cast<float>(BlendTime));
+        PC->SetViewTargetWithBlend(CameraActor, static_cast<float>(BlendTime));
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         ResultObj->SetStringField(TEXT("camera_name"), CameraName);
         ResultObj->SetNumberField(TEXT("blend_time"), BlendTime);
-        ResultObj->SetStringField(TEXT("current_camera"), Switcher->GetCurrentCameraName());
+        ResultObj->SetStringField(TEXT("current_camera"), CameraActor->GetActorNameOrLabel());
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -761,18 +916,39 @@ FString HandleNextCamera(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ACameraSwitcher* Switcher = FindCameraSwitcher(GetPlayWorld());
-        if (!Switcher)
+        UWorld* World = GetPlayWorld();
+        TArray<ACameraActor*> Cameras = FindAllCameraActors(World);
+        APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+
+        if (Cameras.Num() == 0)
         {
-            ResultStr = BuildErrorResponse(TEXT("CameraSwitcher not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No CameraActors found in scene"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!PC)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No PlayerController found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        Switcher->NextCamera(static_cast<float>(BlendTime));
+        AActor* CurrentViewTarget = PC->GetViewTarget();
+        int32 CurrentIndex = -1;
+        for (int32 i = 0; i < Cameras.Num(); ++i)
+        {
+            if (Cameras[i] == CurrentViewTarget)
+            {
+                CurrentIndex = i;
+                break;
+            }
+        }
+
+        int32 NextIndex = (CurrentIndex + 1) % Cameras.Num();
+        PC->SetViewTargetWithBlend(Cameras[NextIndex], static_cast<float>(BlendTime));
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetStringField(TEXT("current_camera"), Switcher->GetCurrentCameraName());
+        ResultObj->SetStringField(TEXT("current_camera"), Cameras[NextIndex]->GetActorNameOrLabel());
         ResultObj->SetNumberField(TEXT("blend_time"), BlendTime);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
@@ -800,18 +976,39 @@ FString HandlePrevCamera(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ACameraSwitcher* Switcher = FindCameraSwitcher(GetPlayWorld());
-        if (!Switcher)
+        UWorld* World = GetPlayWorld();
+        TArray<ACameraActor*> Cameras = FindAllCameraActors(World);
+        APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+
+        if (Cameras.Num() == 0)
         {
-            ResultStr = BuildErrorResponse(TEXT("CameraSwitcher not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No CameraActors found in scene"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!PC)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No PlayerController found"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        Switcher->PreviousCamera(static_cast<float>(BlendTime));
+        AActor* CurrentViewTarget = PC->GetViewTarget();
+        int32 CurrentIndex = -1;
+        for (int32 i = 0; i < Cameras.Num(); ++i)
+        {
+            if (Cameras[i] == CurrentViewTarget)
+            {
+                CurrentIndex = i;
+                break;
+            }
+        }
+
+        int32 PrevIndex = CurrentIndex <= 0 ? Cameras.Num() - 1 : CurrentIndex - 1;
+        PC->SetViewTargetWithBlend(Cameras[PrevIndex], static_cast<float>(BlendTime));
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetStringField(TEXT("current_camera"), Switcher->GetCurrentCameraName());
+        ResultObj->SetStringField(TEXT("current_camera"), Cameras[PrevIndex]->GetActorNameOrLabel());
         ResultObj->SetNumberField(TEXT("blend_time"), BlendTime);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
@@ -833,24 +1030,20 @@ FString HandleGetCameraList(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        ACameraSwitcher* Switcher = FindCameraSwitcher(GetPlayWorld());
-        if (!Switcher)
-        {
-            ResultStr = BuildErrorResponse(TEXT("CameraSwitcher not found"), RequestId);
-            DoneEvent->Trigger();
-            return;
-        }
+        UWorld* World = GetPlayWorld();
+        TArray<ACameraActor*> Cameras = FindAllCameraActors(World);
+        APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+        AActor* CurrentViewTarget = PC ? PC->GetViewTarget() : nullptr;
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        TArray<FString> Names = Switcher->GetCameraNames();
         TArray<TSharedPtr<FJsonValue>> CameraArr;
-        for (const FString& Name : Names)
+        for (ACameraActor* Cam : Cameras)
         {
-            CameraArr.Add(MakeShareable(new FJsonValueString(Name)));
+            CameraArr.Add(MakeShareable(new FJsonValueString(Cam->GetActorNameOrLabel())));
         }
         ResultObj->SetArrayField(TEXT("cameras"), CameraArr);
-        ResultObj->SetStringField(TEXT("current_camera"), Switcher->GetCurrentCameraName());
-        ResultObj->SetNumberField(TEXT("count"), Switcher->GetCameraCount());
+        ResultObj->SetStringField(TEXT("current_camera"), CurrentViewTarget ? CurrentViewTarget->GetActorNameOrLabel() : TEXT(""));
+        ResultObj->SetNumberField(TEXT("count"), Cameras.Num());
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -876,20 +1069,29 @@ FString HandleSetRuntimeCameraMotionBlur(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     FString ResultStr;
 
-    AsyncTask(ENamedThreads::GameThread, [&, Amount]()
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!CamComp)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No CameraComponent found on target"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetPostProcessMotionBlur(static_cast<float>(Amount));
+        CamComp->PostProcessSettings.bOverride_MotionBlurAmount = true;
+        CamComp->PostProcessSettings.MotionBlurAmount = static_cast<float>(Amount);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("motionBlur"), CameraPawn->GetPostProcessMotionBlur());
+        ResultObj->SetNumberField(TEXT("motionBlur"), CamComp->PostProcessSettings.MotionBlurAmount);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -915,20 +1117,29 @@ FString HandleSetRuntimeCameraVignette(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     FString ResultStr;
 
-    AsyncTask(ENamedThreads::GameThread, [&, Intensity]()
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!CamComp)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No CameraComponent found on target"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetPostProcessVignette(static_cast<float>(Intensity));
+        CamComp->PostProcessSettings.bOverride_VignetteIntensity = true;
+        CamComp->PostProcessSettings.VignetteIntensity = static_cast<float>(Intensity);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("vignette"), CameraPawn->GetPostProcessVignette());
+        ResultObj->SetNumberField(TEXT("vignette"), CamComp->PostProcessSettings.VignetteIntensity);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });
@@ -954,20 +1165,29 @@ FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>&
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     FString ResultStr;
 
-    AsyncTask(ENamedThreads::GameThread, [&, Intensity]()
+    AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        AIsometricCameraPawn* CameraPawn = FindRuntimeCameraPawn(GetPlayWorld());
-        if (!CameraPawn)
+        AActor* Target = FindRuntimeCameraTarget(GetPlayWorld());
+        UCameraComponent* CamComp = GetCameraComponent(Target);
+
+        if (!Target)
         {
-            ResultStr = BuildErrorResponse(TEXT("IsometricCameraPawn not found"), RequestId);
+            ResultStr = BuildErrorResponse(TEXT("No runtime camera target found"), RequestId);
+            DoneEvent->Trigger();
+            return;
+        }
+        if (!CamComp)
+        {
+            ResultStr = BuildErrorResponse(TEXT("No CameraComponent found on target"), RequestId);
             DoneEvent->Trigger();
             return;
         }
 
-        CameraPawn->SetPostProcessChromaticAberration(static_cast<float>(Intensity));
+        CamComp->PostProcessSettings.bOverride_SceneFringeIntensity = true;
+        CamComp->PostProcessSettings.SceneFringeIntensity = static_cast<float>(Intensity);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
-        ResultObj->SetNumberField(TEXT("chromaticAberration"), CameraPawn->GetPostProcessChromaticAberration());
+        ResultObj->SetNumberField(TEXT("chromaticAberration"), CamComp->PostProcessSettings.SceneFringeIntensity);
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
         DoneEvent->Trigger();
     });

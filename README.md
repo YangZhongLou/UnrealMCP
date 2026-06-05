@@ -155,30 +155,30 @@ UnrealMCP/
 | --- | --- |
 | `get_runtime_camera_state` | 获取运行时游戏相机状态（位置、FOV、景深、后处理） |
 | `set_runtime_camera_fov` | 设置运行时相机 FOV |
-| `set_runtime_camera_dof` | 设置运行时相机景深（焦距/焦区） |
+| `set_runtime_camera_dof` | 设置运行时相机景深（需 CineCameraComponent） |
 | `set_runtime_camera_post_process` | 设置运行时相机后处理（曝光、泛光） |
 | `set_runtime_camera_transform` | 设置运行时相机位置与缩放（臂长） |
 | `focus_runtime_camera_on_actor` | 将运行时相机聚焦到指定 Actor |
-| `set_runtime_camera_focal_length` | 设置运行时相机焦距（mm） |
-| `set_runtime_camera_aperture` | 设置运行时相机光圈（f-stop） |
-| `set_runtime_camera_focus_distance` | 设置运行时相机对焦距离 |
+| `set_runtime_camera_focal_length` | 设置运行时相机焦距（mm，需 CineCameraComponent） |
+| `set_runtime_camera_aperture` | 设置运行时相机光圈（f-stop，需 CineCameraComponent） |
+| `set_runtime_camera_focus_distance` | 设置运行时相机对焦距离（需 CineCameraComponent） |
 
 ### 相机轨道 (Camera Rig) (3)
 
 | Tool | 描述 |
 | --- | --- |
-| `start_camera_rig` | 启动相机轨道播放 |
-| `stop_camera_rig` | 停止相机轨道播放 |
-| `set_camera_rig_speed` | 设置相机轨道播放速度 |
+| `start_camera_rig` | 启动 ACameraRig_Rail 轨道播放 |
+| `stop_camera_rig` | 停止 ACameraRig_Rail 轨道播放 |
+| `set_camera_rig_speed` | 设置 ACameraRig_Rail 轨道播放速度 |
 
 ### 相机切换 (Camera Switcher) (4)
 
 | Tool | 描述 |
 | --- | --- |
-| `switch_camera` | 按名称切换到已注册相机（带混合过渡） |
-| `next_camera` | 切换到下一个已注册相机 |
-| `prev_camera` | 切换到上一个已注册相机 |
-| `get_camera_list` | 获取场景中已注册相机列表 |
+| `switch_camera` | 按名称切换到场景中的 ACameraActor（带混合过渡） |
+| `next_camera` | 切换到下一个 ACameraActor |
+| `prev_camera` | 切换到上一个 ACameraActor |
+| `get_camera_list` | 获取场景中所有 ACameraActor 列表 |
 
 ### 高级后处理 (3)
 

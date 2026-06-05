@@ -559,7 +559,7 @@
 
 ### get_runtime_camera_state
 
-获取运行时游戏相机状态（位置、缩放、FOV、景深、后处理）。无参数。
+获取运行时游戏相机状态（位置、缩放、FOV、景深、后处理）。作用于 PlayerController 的 ViewTarget，或场景中第一个 `ACameraActor`。无参数。
 
 ### set_runtime_camera_fov
 
@@ -571,12 +571,11 @@
 
 ### set_runtime_camera_dof
 
-设置运行时相机景深。
+设置运行时相机景深。**需要目标 Actor 带有 `UCineCameraComponent`**。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | focal_distance | f64 | ✅ | — | 焦距（cm） |
-| focal_region | f64 | | — | 焦区大小 |
 
 ### set_runtime_camera_post_process
 
@@ -622,7 +621,7 @@
 
 ### set_runtime_camera_focus_distance
 
-设置运行时相机对焦距离。
+设置运行时相机对焦距离。**需要目标 Actor 带有 `UCineCameraComponent`**。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -634,27 +633,27 @@
 
 ### start_camera_rig
 
-启动相机轨道播放。
+启动 `ACameraRig_Rail` 轨道播放。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| rig_name | string | ✅ | — | 场景中 CameraRigActor 的名称 |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
 
 ### stop_camera_rig
 
-停止相机轨道播放。
+停止 `ACameraRig_Rail` 轨道播放。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| rig_name | string | ✅ | — | 场景中 CameraRigActor 的名称 |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
 
 ### set_camera_rig_speed
 
-设置相机轨道播放速度。
+设置 `ACameraRig_Rail` 轨道播放速度。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| rig_name | string | ✅ | — | 场景中 CameraRigActor 的名称 |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
 | speed | f64 | ✅ | — | 播放速度（cm/s） |
 
 ---
@@ -663,16 +662,16 @@
 
 ### switch_camera
 
-按名称切换到已注册相机（带混合过渡）。
+按名称切换到场景中的 `ACameraActor`（带混合过渡）。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| camera_name | string | ✅ | — | 已注册相机名称 |
+| camera_name | string | ✅ | — | `ACameraActor` 名称 |
 | blend_time | f64 | | — | 混合过渡时间（秒） |
 
 ### next_camera
 
-切换到下一个已注册相机。
+切换到下一个 `ACameraActor`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -680,7 +679,7 @@
 
 ### prev_camera
 
-切换到上一个已注册相机。
+切换到上一个 `ACameraActor`。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -688,7 +687,7 @@
 
 ### get_camera_list
 
-获取场景中已注册相机列表。无参数。
+获取场景中所有 `ACameraActor` 列表。无参数。
 
 ---
 

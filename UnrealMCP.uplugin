@@ -18,10 +18,6 @@
 		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
-		},
-		{
-			"Name": "CameraSystem",
-			"Enabled": true
 		}
 	],
 	"Modules": [
