@@ -358,6 +358,25 @@ impl UnrealMcpServer {
         self.call("delete_blueprint_graph", json!({"path": path, "graph_name": graph_name})).await
     }
 
+    #[tool(description = "Get the current level blueprint graph structure (nodes, pins, connections). Pass no params.")]
+    async fn get_level_blueprint(&self) -> String {
+        self.call("get_level_blueprint", json!({})).await
+    }
+
+    #[tool(description = "Remove nodes from a Blueprint or Level Blueprint by node IDs. Use path='__level__' for level blueprint.")]
+    async fn remove_blueprint_nodes(
+        &self,
+        #[tool(param)] path: String,
+        #[tool(param)] node_ids: Vec<String>,
+    ) -> String {
+        self.call("remove_blueprint_nodes", json!({"path": path, "node_ids": node_ids})).await
+    }
+
+    #[tool(description = "Save the current level blueprint (mark modified and save)")]
+    async fn save_level_blueprint(&self) -> String {
+        self.call("save_level_blueprint", json!({})).await
+    }
+
     // ── Asset ──
 
     #[tool(description = "List assets in a path")]

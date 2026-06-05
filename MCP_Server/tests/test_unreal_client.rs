@@ -498,3 +498,47 @@ async fn test_set_runtime_camera_chromatic_aberration() {
 
     mock.stop().await;
 }
+
+#[tokio::test]
+async fn test_get_level_blueprint() {
+    let mock = MockUnrealServer::start(13409).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13409");
+    let response = client.send_command("get_level_blueprint", json!({})).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["level_name"], "TestLevel");
+    assert!(response["result"]["graphs"].as_array().unwrap().len() > 0);
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_remove_blueprint_nodes() {
+    let mock = MockUnrealServer::start(13410).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13410");
+    let response = client.send_command("remove_blueprint_nodes", json!({
+        "path": "__level__",
+        "node_ids": ["A1B2C3D4", "E5F6G7H8"]
+    })).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["removed_count"], 2);
+    assert_eq!(response["result"]["saved"], true);
+
+    mock.stop().await;
+}
+
+#[tokio::test]
+async fn test_save_level_blueprint() {
+    let mock = MockUnrealServer::start(13411).await;
+
+    let mut client = UnrealClient::new("127.0.0.1:13411");
+    let response = client.send_command("save_level_blueprint", json!({})).await.unwrap();
+
+    assert_eq!(response["success"], true);
+    assert_eq!(response["result"]["saved"], true);
+
+    mock.stop().await;
+}

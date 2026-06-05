@@ -281,6 +281,55 @@ impl MockUnrealServer {
                                         "success": true,
                                         "result": {"chromaticAberration": req["params"]["intensity"]}
                                     }),
+                                    "get_level_blueprint" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "level_name": "TestLevel",
+                                            "blueprint_path": "/Game/Maps/TestLevel_BuiltData.TestLevel_BuiltData",
+                                            "graphs": [{
+                                                "name": "EventGraph",
+                                                "type": "EventGraph",
+                                                "node_count": 2,
+                                                "nodes": [
+                                                    {
+                                                        "node_id": "A1B2C3D4",
+                                                        "class": "K2Node_Event",
+                                                        "title": "Event BeginPlay",
+                                                        "pos_x": 0.0,
+                                                        "pos_y": 0.0,
+                                                        "pins": [
+                                                            {"name": "then", "direction": "output", "category": "exec"}
+                                                        ]
+                                                    },
+                                                    {
+                                                        "node_id": "E5F6G7H8",
+                                                        "class": "K2Node_CallFunction",
+                                                        "title": "Print String",
+                                                        "pos_x": 200.0,
+                                                        "pos_y": 0.0,
+                                                        "pins": [
+                                                            {"name": "execute", "direction": "input", "category": "exec"},
+                                                            {"name": "InString", "direction": "input", "category": "string"}
+                                                        ]
+                                                    }
+                                                ]
+                                            }]
+                                        }
+                                    }),
+                                    "remove_blueprint_nodes" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "removed_count": req["params"]["node_ids"].as_array().map(|a| a.len()).unwrap_or(0) as i32,
+                                            "saved": true
+                                        }
+                                    }),
+                                    "save_level_blueprint" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"saved": true}
+                                    }),
                                     _ => json!({
                                         "id": req["id"],
                                         "success": false,
