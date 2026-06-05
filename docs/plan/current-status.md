@@ -14,9 +14,9 @@
 所有修复已完成并验证通过。7/7 bug 修复成功。
 - 真实 UE 测试: **58/58 通过** (1 skipped: play_in_editor 受 PIE 引擎崩溃影响)
 
-## Phase 23 成果
+## Phase 24 成果
 
-### 真实 UE 测试: 59 tests, 58/58 tools (1:1 映射)
+### 真实 UE 测试: 59 tests, 58/58 基础工具 (1:1 映射)
 
 每个工具一个独立测试函数，无搭车测试。
 
@@ -34,7 +34,9 @@
 | Level/Code | 2 | open_level, generate_cpp_class |
 | Viewport/Debug | 2 | take_screenshot, add_actor_tag |
 
-### Phase 22 回顾
+> **新增工具（待真实 UE 测试）**: `create_material`, `set_viewport_camera`, Runtime Camera 系列 (9), Camera Rig (3), Camera Switcher (4), Advanced Post-Process (3), `remove_blueprint_nodes` — 共 13 个工具待补充测试。
+
+### Phase 23 回顾
 
 - **GameThread 修复**: 22 个 Handler 从 MCP 子线程派发到 GameThread
 - **UE 5.7 兼容性**: 7 项 API 适配
@@ -45,7 +47,7 @@
 
 ## 快速统计
 
-- 工具总数: 58
+- 工具总数: 73（Rust 端 `#[tool]`）
 - Mock 测试: 10/10 通过
 - 真实 UE 测试: 56/59 通过 (3 个 PIE 相关因引擎崩溃不可达)
 - GameThread 修复: 23 个 Handler (新增 open_level)

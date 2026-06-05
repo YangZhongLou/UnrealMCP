@@ -30,7 +30,9 @@
 | Phase 22 | v1.0 | GameThread 修复 + UE 5.7 兼容性 | 0 (修复) | ✅ 完成 |
 | Phase 23 | v1.0 | 全量真实 UE 测试覆盖 (42 tests, 58/58 tools) | 0 (测试) | ✅ 完成 |
 | Phase 24 | v1.0 | 真实 UE 测试 bug 修复 (7/7 已修复并验证) | 0 (修复) | ✅ 完成 |
-| **累计** | | | **58** | |
+| **累计 (Phase 24)** | | | **58** | |
+
+> **后续更新**: Phase 24 之后新增了 Runtime Camera (9)、Camera Rig (3)、Camera Switcher (4)、Advanced Post-Process (3)、create_material、set_viewport_camera、get_level_blueprint、remove_blueprint_nodes、save_level_blueprint 等 15 个工具，**当前工具总数 73**。详见 [current-status.md](current-status.md)。
 
 ### Phase 24 修复明细
 
@@ -84,7 +86,7 @@
 | --- | --- | --- |
 | v0.5 | 当前 — 15 个 Phase 完成，50 个工具 | ✅ 完成 |
 | v0.6 | 实时日志推送 + UI 自动化 | TBD |
-| v1.0 | 全量测试 + 文档完善 + 正式发布 | ✅ 完成 (2026/05) — 58 tools, 42 real UE tests, 100% 覆盖 |
+| v1.0 | 全量测试 + 文档完善 + 正式发布 | ✅ 完成 (2026/05) — 58 tools, 42 real UE tests, 100% 覆盖。后续扩展至 70 tools |
 
 ## 7. 开发规范
 
