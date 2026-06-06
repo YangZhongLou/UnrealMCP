@@ -40,7 +40,8 @@ UnrealMCP/
 │           │       ├── BlueprintCommands.cpp
 │           │       ├── ComponentCommands.cpp
 │           │       ├── EditorCommands.cpp
-│           │       └── MaterialCommands.cpp
+│           │       ├── MaterialCommands.cpp
+│           │       └── RuntimeCameraCommands.cpp
 │           └── Public/
 │               ├── UnrealMCP.h
 │               └── MCPCommandServer.h
@@ -49,7 +50,7 @@ UnrealMCP/
 └── README.md
 ```
 
-## 已实现功能 (58 个工具)
+## 已实现功能 (73 个工具)
 
 ### Actor 操作 (9)
 
@@ -85,7 +86,7 @@ UnrealMCP/
 | `focus_editor_panel` | 聚焦编辑器面板 |
 | `get_editor_commands` | 列出可用的编辑器命令 |
 
-### 蓝图操作 (11)
+### 蓝图操作 (14)
 
 | Tool | 描述 |
 | --- | --- |
@@ -100,6 +101,9 @@ UnrealMCP/
 | `create_blueprint_function_graph` | 创建蓝图函数图 |
 | `list_blueprint_graphs` | 列出蓝图所有图 |
 | `delete_blueprint_graph` | 删除蓝图函数图 |
+| `get_level_blueprint` | 获取当前关卡蓝图结构（节点、引脚、连接） |
+| `remove_blueprint_nodes` | 从蓝图或关卡蓝图删除指定节点 |
+| `save_level_blueprint` | 保存当前关卡蓝图 |
 
 ### 资产操作 (6)
 
@@ -120,11 +124,12 @@ UnrealMCP/
 | `add_component` | 添加组件到 Actor |
 | `remove_component` | 从 Actor 移除组件 |
 
-### 材质操作 (3)
+### 材质操作 (4)
 
 | Tool | 描述 |
 | --- | --- |
 | `set_material` | 应用材质到网格组件 |
+| `create_material` | 创建新材质资产（支持多种 shading model、blend mode） |
 | `create_material_instance` | 创建材质实例 (MIC/MID) |
 | `set_material_parameter` | 设置材质参数 (标量/向量) |
 
@@ -136,12 +141,52 @@ UnrealMCP/
 | `set_light_parameters` | 设置光源参数 (强度/颜色/阴影) |
 | `spawn_effect` | 生成 Niagara/Cascade 粒子特效 |
 
-### 输入 / 相机 (2)
+### 输入 / 相机 (3)
 
 | Tool | 描述 |
 | --- | --- |
 | `simulate_key` | 模拟键盘按键 (按下/释放/点击) |
 | `get_viewport_camera` | 获取编辑器视口相机位置与旋转 |
+| `set_viewport_camera` | 设置编辑器视口相机位置与旋转 |
+
+### Runtime 相机 (9)
+
+| Tool | 描述 |
+| --- | --- |
+| `get_runtime_camera_state` | 获取运行时游戏相机状态（位置、FOV、景深、后处理） |
+| `set_runtime_camera_fov` | 设置运行时相机 FOV |
+| `set_runtime_camera_dof` | 设置运行时相机景深（需 CineCameraComponent） |
+| `set_runtime_camera_post_process` | 设置运行时相机后处理（曝光、泛光） |
+| `set_runtime_camera_transform` | 设置运行时相机位置与缩放（臂长） |
+| `focus_runtime_camera_on_actor` | 将运行时相机聚焦到指定 Actor |
+| `set_runtime_camera_focal_length` | 设置运行时相机焦距（mm，需 CineCameraComponent） |
+| `set_runtime_camera_aperture` | 设置运行时相机光圈（f-stop，需 CineCameraComponent） |
+| `set_runtime_camera_focus_distance` | 设置运行时相机对焦距离（需 CineCameraComponent） |
+
+### 相机轨道 (Camera Rig) (3)
+
+| Tool | 描述 |
+| --- | --- |
+| `start_camera_rig` | 启动 ACameraRig_Rail 轨道播放 |
+| `stop_camera_rig` | 停止 ACameraRig_Rail 轨道播放 |
+| `set_camera_rig_speed` | 设置 ACameraRig_Rail 轨道播放速度 |
+
+### 相机切换 (Camera Switcher) (4)
+
+| Tool | 描述 |
+| --- | --- |
+| `switch_camera` | 按名称切换到场景中的 ACameraActor（带混合过渡） |
+| `next_camera` | 切换到下一个 ACameraActor |
+| `prev_camera` | 切换到上一个 ACameraActor |
+| `get_camera_list` | 获取场景中所有 ACameraActor 列表 |
+
+### 高级后处理 (3)
+
+| Tool | 描述 |
+| --- | --- |
+| `set_runtime_camera_motion_blur` | 设置动态模糊强度 |
+| `set_runtime_camera_vignette` | 设置暗角强度 |
+| `set_runtime_camera_chromatic_aberration` | 设置色差强度 |
 
 ### 视口 / 调试 (3)
 
@@ -166,7 +211,7 @@ UnrealMCP/
 
 ## API 文档
 
-详见 [docs/api-reference.md](docs/api-reference.md) — 58 个工具的完整参数说明。
+详见 [docs/api-reference.md](docs/api-reference.md) — 73 个工具的完整参数说明。
 
 ## 安装使用
 

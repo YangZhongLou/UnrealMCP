@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -164,3 +165,5 @@ FString HandleRemoveComponent(const TSharedPtr<FJsonObject>& Params)
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"removed\":true,\"component\":\"%s\"}}"), *ComponentName);
 }
+
+#endif

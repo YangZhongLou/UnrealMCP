@@ -9,11 +9,11 @@
 | [02. 架构设计](02-architecture.md) | 整体架构、技术栈、消息格式、线程模型 |
 | [03. 目录结构](03-directory-structure.md) | 项目目录说明 |
 | [04. Phase 1-5: 原计划](04-phase1-foundation.md) | v0.1 - v1.0 原始规划 (已完成) |
-| [10. 里程碑与规范](10-milestones.md) | **当前进度**: 23 Phase、58 工具、全部完成 |
+| [10. 里程碑与规范](10-milestones.md) | **当前进度**: 24 Phase、73 工具、Phase 24 完成 |
 
 ### 原始 Phase 计划（历史参考）
 
-原计划 5 个 Phase (v0.1 - v1.0)，实际开发扩展至 23 个 Phase (58 工具)。
+原计划 5 个 Phase (v0.1 - v1.0)，实际开发扩展至 24 个 Phase (70 工具)。
 原始 Phase 文档保留作为历史参考:
 
 | 文档 | 内容 | 状态 |

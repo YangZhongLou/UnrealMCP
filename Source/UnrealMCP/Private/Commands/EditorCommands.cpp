@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Editor.h"
 #include "Selection.h"
@@ -7,6 +8,7 @@
 #include "InputCoreTypes.h"
 #include "Components/LightComponent.h"
 #include "LevelEditorViewport.h"
+#include "Slate/SceneViewport.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Misc/FileHelper.h"
@@ -25,6 +27,7 @@
 #include "Async/Async.h"
 #include "Misc/PackageName.h"
 #include "HAL/FileManager.h"
+#include "Containers/Ticker.h"
 
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
@@ -88,8 +91,13 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params)
         DoneEvent->Trigger();
     });
 
-    DoneEvent->Wait();
+    bool bCompleted = DoneEvent->Wait(5000);
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!bCompleted)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Save level timed out (5s)\"}");
+    }
 
     if (bSaved)
     {
@@ -105,6 +113,26 @@ FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params)
     if (!GEditor)
     {
         return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    // Check if level already exists — skip creation and return success
+    FString PackagePath = Path.StartsWith(TEXT("/Game/")) ? Path : TEXT("/Game/") + Path;
+    FString FilePath = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetMapPackageExtension());
+    bool bAlreadyExists = IFileManager::Get().FileExists(*FilePath);
+
+    if (bAlreadyExists)
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetStringField(TEXT("path"), PackagePath);
+        Result->SetBoolField(TEXT("created"), false);
+        Result->SetBoolField(TEXT("alreadyExists"), true);
+
+        FString ResultStr;
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+        Writer->Close();
+
+        return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
     }
 
     bool bCreated = false;
@@ -177,21 +205,32 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
 
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params)
 {
-    bool bStopped = false;
-    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
-    AsyncTask(ENamedThreads::GameThread, [&]()
+    if (!GEditor)
     {
-        if (GEditor && GEditor->IsPlaySessionInProgress())
-        {
-            GEditor->EndPlayMap();
-            bStopped = true;
-        }
-        DoneEvent->Trigger();
-    });
-    DoneEvent->Wait();
-    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
 
-    if (bStopped)
+    bool bWasPlaying = GEditor->IsPlaySessionInProgress();
+
+    if (bWasPlaying)
+    {
+        // Delay EndPlayMap to the next engine tick via FTSTicker.
+        // Using AsyncTask dispatches into the TaskGraph queue; when EndPlayMap
+        // tears down the PIE world it destroys UObjects whose destructors
+        // trigger further TaskGraph work while the queue RecursionGuard is
+        // already held, causing an assertion failure. FTSTicker runs outside
+        // of TaskGraph processing (in FEngineLoop::Tick) so it is safe.
+        FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float) -> bool
+        {
+            if (GEditor && GEditor->IsPlaySessionInProgress())
+            {
+                GEditor->EndPlayMap();
+            }
+            return false; // Execute once only
+        }), 0.0f);
+    }
+
+    if (bWasPlaying)
         return TEXT("{\"success\":true,\"result\":{\"stopped\":true}}");
     return TEXT("{\"success\":false,\"error\":\"No active play session\"}");
 }
@@ -209,13 +248,43 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-        FViewport* Viewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
-
         FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
+
+        // ── Strategy 1: PIE viewport (if play session is active) ──
+        FViewport* Viewport = nullptr;
+        bool bIsPIE = GEditor && GEditor->IsPlaySessionInProgress();
+        if (bIsPIE && GEngine && GEngine->GameViewport)
+        {
+            Viewport = GEngine->GameViewport->Viewport;
+        }
+
+        // ── Strategy 2: Editor viewport (fallback) ──
+        if (!Viewport && GEditor)
+        {
+            Viewport = GEditor->GetActiveViewport();
+        }
+
+        // ── Strategy 3: Any available viewport ──
+        if (!Viewport && GEngine && GEngine->GameViewport)
+        {
+            Viewport = GEngine->GameViewport->Viewport;
+        }
+
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 
         if (Viewport && World)
         {
+            // Force realtime rendering and invalidate to ensure a fresh frame
+            if (!bIsPIE && GCurrentLevelEditingViewportClient)
+            {
+                GCurrentLevelEditingViewportClient->SetRealtime(true);
+                GCurrentLevelEditingViewportClient->Invalidate();
+            }
+
+            FlushRenderingCommands();
+            FPlatformProcess::Sleep(0.1f);
+            FlushRenderingCommands();
+
             // Get editor viewport camera transform
             FVector CameraLocation = FVector::ZeroVector;
             FRotator CameraRotation = FRotator::ZeroRotator;
@@ -279,7 +348,7 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             }
         }
 
-        // Fallback: FScreenshotRequest if scene capture failed
+        // ── Fallback: FScreenshotRequest ──
         if (!bSuccess)
         {
             FScreenshotRequest::RequestScreenshot(Filename, false, false);
@@ -948,3 +1017,76 @@ FString HandleGetEditorCommands(const TSharedPtr<FJsonObject>& Params)
     FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
     return Out;
 }
+
+FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor)
+    {
+        return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
+    }
+
+    FVector TargetLocation = FVector::ZeroVector;
+    FRotator TargetRotation = FRotator::ZeroRotator;
+
+    if (Params->HasField(TEXT("location")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
+        if (Arr.Num() >= 3)
+        {
+            TargetLocation.X = Arr[0]->AsNumber();
+            TargetLocation.Y = Arr[1]->AsNumber();
+            TargetLocation.Z = Arr[2]->AsNumber();
+        }
+    }
+
+    if (Params->HasField(TEXT("rotation")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
+        if (Arr.Num() >= 3)
+        {
+            TargetRotation.Pitch = Arr[0]->AsNumber();
+            TargetRotation.Yaw   = Arr[1]->AsNumber();
+            TargetRotation.Roll  = Arr[2]->AsNumber();
+        }
+    }
+
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        FLevelEditorViewportClient* ViewportClient = GCurrentLevelEditingViewportClient;
+        if (!ViewportClient && GEditor)
+        {
+            const TArray<FLevelEditorViewportClient*>& Clients = GEditor->GetLevelViewportClients();
+            for (FLevelEditorViewportClient* Client : Clients)
+            {
+                if (Client) { ViewportClient = Client; break; }
+            }
+        }
+
+        if (ViewportClient)
+        {
+            ViewportClient->SetViewLocation(TargetLocation);
+            ViewportClient->SetViewRotation(TargetRotation);
+            ViewportClient->Invalidate();
+        }
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+    Result->SetStringField(TEXT("location"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetLocation.X, TargetLocation.Y, TargetLocation.Z));
+    Result->SetStringField(TEXT("rotation"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetRotation.Pitch, TargetRotation.Yaw, TargetRotation.Roll));
+
+    FString ResultStr;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+    FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
+    Writer->Close();
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+#endif

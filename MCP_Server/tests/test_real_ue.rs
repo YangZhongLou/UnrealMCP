@@ -1515,3 +1515,28 @@ async fn test_real_ue_get_blueprint_graph() {
     // Cleanup
     client.send_command("delete_asset", json!({"path": bp_asset_path})).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_get_level_blueprint() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let response = client.send_command("get_level_blueprint", json!({})).await.unwrap();
+    println!("LevelBlueprint: {}", serde_json::to_string_pretty(&response).unwrap());
+
+    assert_eq!(response["success"], true, "get_level_blueprint failed: {:?}", response);
+    assert!(!response["result"]["level_name"].as_str().unwrap().is_empty());
+    assert!(response["result"]["graphs"].as_array().unwrap().len() > 0);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_real_ue_save_level_blueprint() {
+    let mut client = UnrealClient::new("127.0.0.1:13377");
+
+    let response = client.send_command("save_level_blueprint", json!({})).await.unwrap();
+    println!("SaveLevelBlueprint: {}", serde_json::to_string_pretty(&response).unwrap());
+
+    assert_eq!(response["success"], true, "save_level_blueprint failed: {:?}", response);
+    assert_eq!(response["result"]["saved"], true);
+}

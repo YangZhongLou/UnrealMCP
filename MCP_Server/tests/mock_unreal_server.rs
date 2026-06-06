@@ -1,16 +1,14 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use serde_json::{json, Value};
 
 pub struct MockUnrealServer {
-    addr: String,
     shutdown: tokio::sync::mpsc::Sender<()>,
 }
 
 impl MockUnrealServer {
     pub async fn start(port: u16) -> Self {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
         let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
 
         tokio::spawn(async move {
@@ -133,6 +131,203 @@ impl MockUnrealServer {
                                             "shadingModel": req["params"].get("shadingModel")
                                         }
                                     }),
+                                    "set_viewport_camera" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "location": req["params"]["location"].clone(),
+                                            "rotation": req["params"]["rotation"].clone()
+                                        }
+                                    }),
+                                    "get_runtime_camera_state" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "location": [0.0, 0.0, 0.0],
+                                            "rotation": [-45.0, 45.0, 0.0],
+                                            "zoom": 2500.0,
+                                            "fov": 90.0,
+                                            "dof_focal_distance": 10000.0,
+                                            "exposure": 0.0,
+                                            "bloom": 0.675,
+                                            "focalLength": 50.0,
+                                            "aperture": 2.8,
+                                            "focusDistance": 10000.0
+                                        }
+                                    }),
+                                    "set_runtime_camera_fov" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"fov": req["params"]["fov"]}
+                                    }),
+                                    "set_runtime_camera_dof" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "focal_distance": req["params"]["focalDistance"]
+                                        }
+                                    }),
+                                    "set_runtime_camera_post_process" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "exposure": req["params"].get("exposure").unwrap_or(&json!(0.0)),
+                                            "bloom": req["params"].get("bloom").unwrap_or(&json!(0.675))
+                                        }
+                                    }),
+                                    "set_runtime_camera_transform" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "location": req["params"]["location"].clone(),
+                                            "zoom": req["params"]["zoom"].clone()
+                                        }
+                                    }),
+                                    "focus_runtime_camera_on_actor" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "actor_name": req["params"]["actorName"],
+                                            "target_location": [0.0, 0.0, 100.0]
+                                        }
+                                    }),
+                                    "set_runtime_camera_focal_length" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"focalLength": req["params"]["focalLength"]}
+                                    }),
+                                    "set_runtime_camera_aperture" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"aperture": req["params"]["aperture"]}
+                                    }),
+                                    "set_runtime_camera_focus_distance" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"focusDistance": req["params"]["focusDistance"]}
+                                    }),
+                                    "start_camera_rig" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "rig_name": req["params"]["rigName"],
+                                            "playing": true
+                                        }
+                                    }),
+                                    "stop_camera_rig" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "rig_name": req["params"]["rigName"],
+                                            "playing": false
+                                        }
+                                    }),
+                                    "set_camera_rig_speed" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "rig_name": req["params"]["rigName"],
+                                            "speed": req["params"]["speed"]
+                                        }
+                                    }),
+                                    "switch_camera" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "camera_name": req["params"]["cameraName"],
+                                            "current_camera": req["params"]["cameraName"],
+                                            "blend_time": req["params"].get("blendTime").unwrap_or(&json!(1.0))
+                                        }
+                                    }),
+                                    "next_camera" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "current_camera": "Camera_1",
+                                            "blend_time": req["params"].get("blendTime").unwrap_or(&json!(1.0))
+                                        }
+                                    }),
+                                    "prev_camera" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "current_camera": "Camera_0",
+                                            "blend_time": req["params"].get("blendTime").unwrap_or(&json!(1.0))
+                                        }
+                                    }),
+                                    "get_camera_list" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "cameras": ["Camera_0", "Camera_1", "Camera_2"],
+                                            "current_camera": "Camera_0",
+                                            "count": 3
+                                        }
+                                    }),
+                                    "set_runtime_camera_motion_blur" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"motionBlur": req["params"]["amount"]}
+                                    }),
+                                    "set_runtime_camera_vignette" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"vignette": req["params"]["intensity"]}
+                                    }),
+                                    "set_runtime_camera_chromatic_aberration" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"chromaticAberration": req["params"]["intensity"]}
+                                    }),
+                                    "get_level_blueprint" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "level_name": "TestLevel",
+                                            "blueprint_path": "/Game/Maps/TestLevel_BuiltData.TestLevel_BuiltData",
+                                            "graphs": [{
+                                                "name": "EventGraph",
+                                                "type": "EventGraph",
+                                                "node_count": 2,
+                                                "nodes": [
+                                                    {
+                                                        "node_id": "A1B2C3D4",
+                                                        "class": "K2Node_Event",
+                                                        "title": "Event BeginPlay",
+                                                        "pos_x": 0.0,
+                                                        "pos_y": 0.0,
+                                                        "pins": [
+                                                            {"name": "then", "direction": "output", "category": "exec"}
+                                                        ]
+                                                    },
+                                                    {
+                                                        "node_id": "E5F6G7H8",
+                                                        "class": "K2Node_CallFunction",
+                                                        "title": "Print String",
+                                                        "pos_x": 200.0,
+                                                        "pos_y": 0.0,
+                                                        "pins": [
+                                                            {"name": "execute", "direction": "input", "category": "exec"},
+                                                            {"name": "InString", "direction": "input", "category": "string"}
+                                                        ]
+                                                    }
+                                                ]
+                                            }]
+                                        }
+                                    }),
+                                    "remove_blueprint_nodes" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {
+                                            "removed_count": req["params"]["node_ids"].as_array().map(|a| a.len()).unwrap_or(0) as i32,
+                                            "saved": true
+                                        }
+                                    }),
+                                    "save_level_blueprint" => json!({
+                                        "id": req["id"],
+                                        "success": true,
+                                        "result": {"saved": true}
+                                    }),
                                     _ => json!({
                                         "id": req["id"],
                                         "success": false,
@@ -150,7 +345,7 @@ impl MockUnrealServer {
             }
         });
 
-        Self { addr, shutdown: tx }
+        Self { shutdown: tx }
     }
 
     pub async fn stop(self) {

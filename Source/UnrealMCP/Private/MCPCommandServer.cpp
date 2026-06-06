@@ -1,3 +1,4 @@
+﻿#if WITH_EDITOR
 #include "MCPCommandServer.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -63,6 +64,29 @@ FString HandleCreateBlueprintFunctionGraph(const TSharedPtr<FJsonObject>& Params
 FString HandleListBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
 FString HandleDeleteBlueprintGraph(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleRemoveBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
+FString HandleSaveLevelBlueprint(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraFOV(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraDOF(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraPostProcess(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params);
+FString HandleFocusRuntimeCameraOnActor(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraFocalLength(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraAperture(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraFocusDistance(const TSharedPtr<FJsonObject>& Params);
+FString HandleStartCameraRig(const TSharedPtr<FJsonObject>& Params);
+FString HandleStopCameraRig(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetCameraRigSpeed(const TSharedPtr<FJsonObject>& Params);
+FString HandleSwitchCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandleNextCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandlePrevCamera(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetCameraList(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraMotionBlur(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraVignette(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -199,8 +223,12 @@ void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
 
         {
             // BytesRead > 0 guaranteed here
+            // Null-terminate within buffer bounds so UTF8_TO_TCHAR stops correctly
+            if (BytesRead < Buffer.Num())
+            {
+                Buffer[BytesRead] = '\0';
+            }
             FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buffer.GetData())));
-            RequestStr = RequestStr.Left(BytesRead);
 
             UE_LOG(LogMCPCommandServer, Log, TEXT("Received: %s"), *RequestStr);
 
@@ -231,7 +259,22 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
     FString ResultStr;
 
-    if (Method == TEXT("get_editor_info"))
+    if (Method == TEXT("check_unreal_connection"))
+    {
+        TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+        Result->SetBoolField(TEXT("connected"), true);
+        Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+        Result->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+
+        TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+        Response->SetStringField(TEXT("id"), RequestId);
+        Response->SetBoolField(TEXT("success"), true);
+        Response->SetObjectField(TEXT("result"), Result);
+
+        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
+        FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    }
+    else if (Method == TEXT("get_editor_info"))
     {
         TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
         Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
@@ -473,6 +516,98 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     {
         ResultStr = HandleDeleteBlueprintGraph(Params);
     }
+    else if (Method == TEXT("get_level_blueprint"))
+    {
+        ResultStr = HandleGetLevelBlueprint(Params);
+    }
+    else if (Method == TEXT("remove_blueprint_nodes"))
+    {
+        ResultStr = HandleRemoveBlueprintNodes(Params);
+    }
+    else if (Method == TEXT("save_level_blueprint"))
+    {
+        ResultStr = HandleSaveLevelBlueprint(Params);
+    }
+    else if (Method == TEXT("set_viewport_camera"))
+    {
+        ResultStr = HandleSetViewportCamera(Params);
+    }
+    else if (Method == TEXT("get_runtime_camera_state"))
+    {
+        ResultStr = HandleGetRuntimeCameraState(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_fov"))
+    {
+        ResultStr = HandleSetRuntimeCameraFOV(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_dof"))
+    {
+        ResultStr = HandleSetRuntimeCameraDOF(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_post_process"))
+    {
+        ResultStr = HandleSetRuntimeCameraPostProcess(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_transform"))
+    {
+        ResultStr = HandleSetRuntimeCameraTransform(Params);
+    }
+    else if (Method == TEXT("focus_runtime_camera_on_actor"))
+    {
+        ResultStr = HandleFocusRuntimeCameraOnActor(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_focal_length"))
+    {
+        ResultStr = HandleSetRuntimeCameraFocalLength(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_aperture"))
+    {
+        ResultStr = HandleSetRuntimeCameraAperture(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_focus_distance"))
+    {
+        ResultStr = HandleSetRuntimeCameraFocusDistance(Params);
+    }
+    else if (Method == TEXT("start_camera_rig"))
+    {
+        ResultStr = HandleStartCameraRig(Params);
+    }
+    else if (Method == TEXT("stop_camera_rig"))
+    {
+        ResultStr = HandleStopCameraRig(Params);
+    }
+    else if (Method == TEXT("set_camera_rig_speed"))
+    {
+        ResultStr = HandleSetCameraRigSpeed(Params);
+    }
+    else if (Method == TEXT("switch_camera"))
+    {
+        ResultStr = HandleSwitchCamera(Params);
+    }
+    else if (Method == TEXT("next_camera"))
+    {
+        ResultStr = HandleNextCamera(Params);
+    }
+    else if (Method == TEXT("prev_camera"))
+    {
+        ResultStr = HandlePrevCamera(Params);
+    }
+    else if (Method == TEXT("get_camera_list"))
+    {
+        ResultStr = HandleGetCameraList(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_motion_blur"))
+    {
+        ResultStr = HandleSetRuntimeCameraMotionBlur(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_vignette"))
+    {
+        ResultStr = HandleSetRuntimeCameraVignette(Params);
+    }
+    else if (Method == TEXT("set_runtime_camera_chromatic_aberration"))
+    {
+        ResultStr = HandleSetRuntimeCameraChromaticAberration(Params);
+    }
     else
     {
         TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
@@ -486,3 +621,5 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
     return ResultStr;
 }
+
+#endif

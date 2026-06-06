@@ -1,10 +1,10 @@
-﻿# UnrealMCP API Reference
+# UnrealMCP API Reference
 
-57 个 MCP 工具，11 个类别。
+73 个 MCP 工具，15 个类别。
 
 ---
 
-## 1. 连接 (1)
+## 1. 连接 (2)
 
 ### check_unreal_connection
 
@@ -15,6 +15,12 @@
 | (无参数) | — | — | — | — |
 
 **返回**: 连接状态文本。
+
+---
+
+### get_editor_info
+
+获取引擎版本、项目名称等编辑器信息。无参数。
 
 ---
 
@@ -74,9 +80,9 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
-| property | string | ✅ | — | 属性名 |
-| value | string | ✅ | — | 属性值（JSON 字符串） |
+| actor_name | string | ✅ | — | Actor 名称 |
+| property_name | string | ✅ | — | 属性名 |
+| value | any | ✅ | — | 属性值（JSON） |
 
 ### get_actor_property
 
@@ -84,8 +90,8 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
-| property | string | ✅ | — | 属性名 |
+| actor_name | string | ✅ | — | Actor 名称 |
+| property_name | string | ✅ | — | 属性名 |
 
 ### find_actors_by_class
 
@@ -94,6 +100,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | class_name | string | ✅ | — | Actor 类名 |
+| exact_match | bool | | false | 是否精确匹配 |
 
 ### spawn_blueprint_actor
 
@@ -101,14 +108,14 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| path | string | ✅ | — | Blueprint 资产路径 |
+| blueprint_path | string | ✅ | — | Blueprint 资产路径 |
 | name | string | | — | 可选的 Actor 名称 |
 | location | [f64;3] | | [0,0,0] | 位置 |
 | rotation | [f64;3] | | [0,0,0] | 旋转 |
 
 ---
 
-## 3. 编辑器操作 (14)
+## 3. 编辑器操作 (15)
 
 ### get_editor_info
 
@@ -212,7 +219,7 @@
 
 ---
 
-## 4. 蓝图操作 (11)
+## 4. 蓝图操作 (14)
 
 ### create_blueprint
 
@@ -221,7 +228,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | name | string | ✅ | — | Blueprint 名称 |
-| parent_class | string | ✅ | — | 父类名，如 `AActor` |
+| parent_class | string | | `AActor` | 父类名 |
 | path | string | | `/Game` | 资产路径 |
 
 ### compile_blueprint
@@ -248,13 +255,11 @@
 | --- | --- | --- | --- | --- |
 | path | string | ✅ | — | Blueprint 资产路径 |
 | node_type | string | ✅ | — | Event / CallFunction / CustomEvent / VariableGet / VariableSet / PrintString |
-| function_name | string | | — | 函数名（CallFunction 时必填） |
-| variable_name | string | | — | 变量名（VariableGet/Set 时必填） |
-| event_name | string | | — | 事件名（Event/CustomEvent 时必填） |
-| position_x | i32 | | 0 | 节点 X 坐标 |
-| position_y | i32 | | 0 | 节点 Y 坐标 |
-| graph_type | string | | EventGraph | 目标图：EventGraph 或函数图名 |
-| target_class | string | | — | 目标类（Event 时可选） |
+| name | string | | — | 函数/事件/变量名（依 node_type 而定） |
+| class_name | string | | — | 目标类名 |
+| graph_type | string | | `EventGraph` | 目标图：EventGraph 或函数图名 |
+| pos_x | i32 | | 0 | 节点 X 坐标 |
+| pos_y | i32 | | 0 | 节点 Y 坐标 |
 
 ### connect_blueprint_pins
 
@@ -275,7 +280,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | path | string | ✅ | — | Blueprint 资产路径 |
-| graph_type | string | | EventGraph | 目标图：EventGraph 或函数图名 |
+| graph_type | string | | `EventGraph` | 目标图：EventGraph 或函数图名 |
 
 ### add_blueprint_variable
 
@@ -324,6 +329,29 @@
 | path | string | ✅ | — | Blueprint 资产路径 |
 | graph_name | string | ✅ | — | 函数图名称 |
 
+### get_level_blueprint
+
+获取当前关卡蓝图的完整图形结构（节点、引脚、连接）。无需参数。
+
+**返回**: 包含 `level_name`, `blueprint_path`, `graphs`（含 nodes 和 pins 的数组）。
+
+### remove_blueprint_nodes
+
+从 Blueprint 或关卡蓝图中删除指定节点。使用 `path="__level__"` 操作关卡蓝图。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| path | string | ✅ | — | Blueprint 路径或 `__level__` |
+| node_ids | [string] | ✅ | — | 要删除的节点 GUID 列表 |
+
+**返回**: `removed_count`（删除数量）, `saved`（是否已保存）。
+
+### save_level_blueprint
+
+保存当前关卡蓝图（标记为已修改并保存关卡）。无需参数。
+
+**返回**: `saved: true`。
+
 ---
 
 ## 5. 资产操作 (6)
@@ -335,7 +363,6 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | path | string | | `/Game` | 搜索路径 |
-| class_name | string | | — | 过滤类名（可选） |
 
 ### get_asset_info
 
@@ -359,8 +386,8 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| source_path | string | ✅ | — | 源路径 |
-| destination_path | string | ✅ | — | 目标路径 |
+| path | string | ✅ | — | 源路径 |
+| new_name | string | ✅ | — | 新名称 |
 
 ### import_asset
 
@@ -390,7 +417,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
+| actor_name | string | ✅ | — | Actor 名称 |
 
 ### add_component
 
@@ -398,7 +425,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
+| actor_name | string | ✅ | — | Actor 名称 |
 | component_class | string | ✅ | — | 组件类名 |
 | component_name | string | | — | 可选组件名 |
 
@@ -408,12 +435,12 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
+| actor_name | string | ✅ | — | Actor 名称 |
 | component_name | string | ✅ | — | 组件名 |
 
 ---
 
-## 7. 材质操作 (3)
+## 7. 材质操作 (4)
 
 ### set_material
 
@@ -423,16 +450,33 @@
 | --- | --- | --- | --- | --- |
 | actor_name | string | ✅ | — | Actor 名称 |
 | material_path | string | ✅ | — | 材质资产路径 |
+| component_name | string | | — | 目标组件名（可选） |
 | slot_index | i32 | | 0 | 材质槽索引 |
 
-### create_material_instance
+### create_material
 
-创建材质实例 (MIC)。
+创建新材质资产。
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
+| path | string | ✅ | — | 材质资产路径 |
+| shading_model | string | | `default_lit` | default_lit / unlit / subsurface / subsurface_profile / clear_coat / thin_translucent |
+| blend_mode | string | | `Opaque` | Opaque / Masked / Translucent / Additive |
+| base_color | [f64;3] | | — | 基础颜色 [r, g, b]（0-1） |
+| metallic | f64 | | — | 金属度（0-1） |
+| roughness | f64 | | — | 粗糙度（0-1） |
+| specular | f64 | | — | 高光度（0-1） |
+| reuse | bool | | false | 已存在时静默成功 |
+
+### create_material_instance
+
+创建材质实例 (MIC/MID)。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| path | string | ✅ | — | 新实例路径 |
 | parent_path | string | ✅ | — | 父材质路径 |
-| instance_path | string | ✅ | — | 新实例路径 |
+| instance_type | string | | `MIC` | MIC / MID |
 
 ### set_material_parameter
 
@@ -440,10 +484,12 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| instance_path | string | ✅ | — | 材质实例路径 |
+| actor_name | string | ✅ | — | Actor 名称 |
 | parameter_name | string | ✅ | — | 参数名 |
-| parameter_type | string | ✅ | — | Scalar / Vector |
-| value | varies | ✅ | — | 标量值（float）或向量值（[r,g,b] 0-1） |
+| scalar_value | f64 | | — | 标量值 |
+| vector_value | [f64;3] | | — | 向量值 [r, g, b]（0-1） |
+| component_name | string | | — | 目标组件名（可选） |
+| slot_index | i32 | | 0 | 材质槽索引 |
 
 ---
 
@@ -457,6 +503,7 @@
 | --- | --- | --- | --- | --- |
 | actor_name | string | ✅ | — | Actor 名称 |
 | mesh_path | string | ✅ | — | Static Mesh 资产路径 |
+| component_name | string | | — | 目标组件名（可选） |
 
 ### set_light_parameters
 
@@ -475,12 +522,14 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| effect_path | string | ✅ | — | 特效资产路径 |
+| asset_path | string | ✅ | — | 特效资产路径 |
 | location | [f64;3] | | [0,0,0] | 生成位置 |
+| rotation | [f64;3] | | [0,0,0] | 旋转 |
+| auto_destroy | bool | | true | 是否自动销毁 |
 
 ---
 
-## 9. 输入/相机 (2)
+## 9. 输入/相机 (3)
 
 ### simulate_key
 
@@ -495,9 +544,182 @@
 
 获取编辑器视口相机位置与旋转。无参数。
 
+### set_viewport_camera
+
+设置编辑器视口相机位置与旋转。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| location | [f64;3] | | — | 位置 [x, y, z] |
+| rotation | [f64;3] | | — | 旋转 [pitch, yaw, roll] |
+
 ---
 
-## 10. 视口/调试 (3)
+## 10. Runtime 相机 (9)
+
+### get_runtime_camera_state
+
+获取运行时游戏相机状态（位置、缩放、FOV、景深、后处理）。作用于 PlayerController 的 ViewTarget，或场景中第一个 `ACameraActor`。无参数。
+
+### set_runtime_camera_fov
+
+设置运行时相机 FOV。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| fov | f64 | ✅ | — | 视野角度（10-170 度） |
+
+### set_runtime_camera_dof
+
+设置运行时相机景深。**需要目标 Actor 带有 `UCineCameraComponent`**。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| focal_distance | f64 | ✅ | — | 焦距（cm） |
+
+### set_runtime_camera_post_process
+
+设置运行时相机后处理。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| exposure | f64 | | — | 曝光补偿（-10 到 +10） |
+| bloom | f64 | | — | 泛光强度（0-10） |
+
+### set_runtime_camera_transform
+
+设置运行时相机位置与缩放。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| location | [f64;3] | | — | 位置 [x, y, z] |
+| zoom | f64 | | — | 缩放（臂长） |
+
+### focus_runtime_camera_on_actor
+
+将运行时相机聚焦到指定 Actor。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| actor_name | string | ✅ | — | 目标 Actor 名称 |
+
+### set_runtime_camera_focal_length
+
+设置运行时相机焦距。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| focal_length | f64 | ✅ | — | 焦距（mm，1-1000） |
+
+### set_runtime_camera_aperture
+
+设置运行时相机光圈。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| aperture | f64 | ✅ | — | 光圈 f-stop（0.1-64） |
+
+### set_runtime_camera_focus_distance
+
+设置运行时相机对焦距离。**需要目标 Actor 带有 `UCineCameraComponent`**。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| focus_distance | f64 | ✅ | — | 对焦距离（cm） |
+
+---
+
+## 11. 相机轨道 (Camera Rig) (3)
+
+### start_camera_rig
+
+启动 `ACameraRig_Rail` 轨道播放。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
+
+### stop_camera_rig
+
+停止 `ACameraRig_Rail` 轨道播放。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
+
+### set_camera_rig_speed
+
+设置 `ACameraRig_Rail` 轨道播放速度。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| rig_name | string | ✅ | — | 场景中 `ACameraRig_Rail` 的名称 |
+| speed | f64 | ✅ | — | 播放速度（cm/s） |
+
+---
+
+## 12. 相机切换 (Camera Switcher) (4)
+
+### switch_camera
+
+按名称切换到场景中的 `ACameraActor`（带混合过渡）。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| camera_name | string | ✅ | — | `ACameraActor` 名称 |
+| blend_time | f64 | | — | 混合过渡时间（秒） |
+
+### next_camera
+
+切换到下一个 `ACameraActor`。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| blend_time | f64 | | — | 混合过渡时间（秒） |
+
+### prev_camera
+
+切换到上一个 `ACameraActor`。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| blend_time | f64 | | — | 混合过渡时间（秒） |
+
+### get_camera_list
+
+获取场景中所有 `ACameraActor` 列表。无参数。
+
+---
+
+## 13. 高级后处理 (3)
+
+### set_runtime_camera_motion_blur
+
+设置动态模糊强度。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| amount | f64 | ✅ | — | 动态模糊强度（0-1） |
+
+### set_runtime_camera_vignette
+
+设置暗角强度。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| intensity | f64 | ✅ | — | 暗角强度（0-10） |
+
+### set_runtime_camera_chromatic_aberration
+
+设置色差强度。
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| intensity | f64 | ✅ | — | 色差强度（0-10） |
+
+---
+
+## 14. 视口/调试 (3)
 
 ### set_view_mode
 
@@ -522,12 +744,12 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | Actor 名称 |
+| actor_name | string | ✅ | — | Actor 名称 |
 | tag | string | ✅ | — | 标签文本 |
 
 ---
 
-## 11. 关卡/代码 (2)
+## 15. 关卡/代码 (2)
 
 ### open_level
 
@@ -535,7 +757,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| name | string | ✅ | — | 关卡名 |
+| path | string | ✅ | — | 关卡路径 |
 
 ### generate_cpp_class
 

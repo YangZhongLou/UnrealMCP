@@ -1,3 +1,4 @@
+#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -17,6 +18,13 @@
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionOneMinus.h"
+#include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionDivide.h"
+#include "Materials/MaterialExpressionPower.h"
+#include "Materials/MaterialExpressionClamp.h"
+#include "Materials/MaterialExpressionSine.h"
+#include "Materials/MaterialExpressionCosine.h"
 #include "MaterialEditingLibrary.h"
 #include "Editor.h"
 #include "Dom/JsonObject.h"
@@ -80,6 +88,19 @@ static UMeshComponent* FindMeshComponent(AActor* Actor, const FString& Component
 	return Result;
 }
 
+static EMaterialProperty ParseMaterialProperty(const FString& PropStr)
+{
+	if (PropStr.Equals(TEXT("baseColor"), ESearchCase::IgnoreCase)) return MP_BaseColor;
+	if (PropStr.Equals(TEXT("metallic"), ESearchCase::IgnoreCase)) return MP_Metallic;
+	if (PropStr.Equals(TEXT("roughness"), ESearchCase::IgnoreCase)) return MP_Roughness;
+	if (PropStr.Equals(TEXT("specular"), ESearchCase::IgnoreCase)) return MP_Specular;
+	if (PropStr.Equals(TEXT("emissiveColor"), ESearchCase::IgnoreCase)) return MP_EmissiveColor;
+	if (PropStr.Equals(TEXT("normal"), ESearchCase::IgnoreCase)) return MP_Normal;
+	if (PropStr.Equals(TEXT("opacity"), ESearchCase::IgnoreCase)) return MP_Opacity;
+	if (PropStr.Equals(TEXT("ambientOcclusion"), ESearchCase::IgnoreCase)) return MP_AmbientOcclusion;
+	return MP_MAX;
+}
+
 FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 {
 	FString Path = Params->GetStringField(TEXT("path"));
@@ -122,7 +143,14 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 	float LerpAlpha = Params->HasField(TEXT("lerpAlpha")) ? (float)Params->GetNumberField(TEXT("lerpAlpha")) : 0.5f;
 	bool bHasOneMinus = Params->HasField(TEXT("oneMinusValue"));
 	float OneMinusVal = bHasOneMinus ? (float)Params->GetNumberField(TEXT("oneMinusValue")) : 0.5f;
-	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular || bHasFresnel || bHasClouds || bHasTexture || bHasLerpB || bHasOneMinus;
+	bool bHasMath = Params->HasField(TEXT("math"));
+	const TArray<TSharedPtr<FJsonValue>>* MathOps = nullptr;
+	if (bHasMath)
+	{
+		MathOps = &Params->GetArrayField(TEXT("math"));
+		if (MathOps->Num() == 0) bHasMath = false;
+	}
+	bool bHasProperties = bHasBaseColor || bHasMetallic || bHasRoughness || bHasSpecular || bHasFresnel || bHasClouds || bHasTexture || bHasLerpB || bHasOneMinus || bHasMath;
 
 	FString ErrorMsg;
 	TSharedPtr<FJsonObject> ResponseJson;
@@ -429,6 +457,153 @@ FString HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params)
 			}
 		}
 
+		// Math operations: Add, Subtract, Multiply, Divide, Power, Clamp, Sine, Cosine
+		if (bHasMath && MathOps)
+		{
+			TArray<UMaterialExpression*> MathNodes;
+			int32 MathIndex = 0;
+			for (const TSharedPtr<FJsonValue>& OpVal : *MathOps)
+			{
+				const TSharedPtr<FJsonObject>* OpObjPtr = nullptr;
+				if (!OpVal->TryGetObject(OpObjPtr) || !OpObjPtr) continue;
+				const TSharedPtr<FJsonObject>& OpObj = *OpObjPtr;
+
+				FString OpType = OpObj->HasField(TEXT("type")) ? OpObj->GetStringField(TEXT("type")) : TEXT("");
+				OpType = OpType.ToLower();
+
+				auto MakeConst = [&](float V, int32 DX, int32 DY) -> UMaterialExpression*
+				{
+					UMaterialExpression* E = UMaterialEditingLibrary::CreateMaterialExpression(
+						NewMaterial, UMaterialExpressionConstant::StaticClass(), -600 + MathIndex * 50 + DX, -1200 + (MathIndex % 3) * 120 + DY);
+					UMaterialExpressionConstant* C = Cast<UMaterialExpressionConstant>(E);
+					if (C) C->R = V;
+					return E;
+				};
+
+				auto GetInputExpr = [&](const TSharedPtr<FJsonObject>& InObj) -> UMaterialExpression*
+				{
+					if (InObj->HasField(TEXT("const")))
+						return MakeConst((float)InObj->GetNumberField(TEXT("const")), 0, 0);
+					if (InObj->HasField(TEXT("node")))
+					{
+						int32 Idx = FMath::RoundToInt(InObj->GetNumberField(TEXT("node")));
+						if (Idx >= 0 && Idx < MathNodes.Num()) return MathNodes[Idx];
+					}
+					return nullptr;
+				};
+
+				TArray<UMaterialExpression*> InputNodes;
+				if (OpObj->HasField(TEXT("inputs")))
+				{
+					for (const TSharedPtr<FJsonValue>& InVal : OpObj->GetArrayField(TEXT("inputs")))
+					{
+						const TSharedPtr<FJsonObject>* InObjPtr = nullptr;
+						if (InVal->TryGetObject(InObjPtr) && InObjPtr)
+						{
+							UMaterialExpression* InE = GetInputExpr(*InObjPtr);
+							if (InE) InputNodes.Add(InE);
+						}
+					}
+				}
+
+				int32 PosX = -600 + MathIndex * 80;
+				int32 PosY = -1200 + (MathIndex % 3) * 150;
+				UMaterialExpression* Expr = nullptr;
+
+				auto WireAB = [&](UMaterialExpression* E, UMaterialExpression* A, UMaterialExpression* B)
+				{
+					// Use reflection to wire A/B inputs generically for binary ops
+					// Most binary ops have A/B fields
+					struct FExprInputRef { FExpressionInput* Ptr; };
+					FExprInputRef InA = { nullptr }, InB = { nullptr };
+					if (auto AddN = Cast<UMaterialExpressionAdd>(E)) { InA.Ptr = &AddN->A; InB.Ptr = &AddN->B; }
+					else if (auto SubN = Cast<UMaterialExpressionSubtract>(E)) { InA.Ptr = &SubN->A; InB.Ptr = &SubN->B; }
+					else if (auto MulN = Cast<UMaterialExpressionMultiply>(E)) { InA.Ptr = &MulN->A; InB.Ptr = &MulN->B; }
+					else if (auto DivN = Cast<UMaterialExpressionDivide>(E)) { InA.Ptr = &DivN->A; InB.Ptr = &DivN->B; }
+					if (InA.Ptr && A) { InA.Ptr->Expression = A; InA.Ptr->OutputIndex = 0; }
+					if (InB.Ptr && B) { InB.Ptr->Expression = B; InB.Ptr->OutputIndex = 0; }
+				};
+
+				if (OpType == TEXT("add"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionAdd::StaticClass(), PosX, PosY);
+					if (InputNodes.Num() >= 2) WireAB(Expr, InputNodes[0], InputNodes[1]);
+				}
+				else if (OpType == TEXT("subtract"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionSubtract::StaticClass(), PosX, PosY);
+					if (InputNodes.Num() >= 2) WireAB(Expr, InputNodes[0], InputNodes[1]);
+				}
+				else if (OpType == TEXT("multiply"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionMultiply::StaticClass(), PosX, PosY);
+					if (InputNodes.Num() >= 2) WireAB(Expr, InputNodes[0], InputNodes[1]);
+				}
+				else if (OpType == TEXT("divide"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionDivide::StaticClass(), PosX, PosY);
+					if (InputNodes.Num() >= 2) WireAB(Expr, InputNodes[0], InputNodes[1]);
+				}
+				else if (OpType == TEXT("power"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionPower::StaticClass(), PosX, PosY);
+					UMaterialExpressionPower* N = Cast<UMaterialExpressionPower>(Expr);
+					if (N && InputNodes.Num() >= 1)
+					{
+						N->Base.Expression = InputNodes[0]; N->Base.OutputIndex = 0;
+						if (InputNodes.Num() >= 2) { N->Exponent.Expression = InputNodes[1]; N->Exponent.OutputIndex = 0; }
+						else if (OpObj->HasField(TEXT("exponent")))
+						{
+							UMaterialExpression* EC = MakeConst((float)OpObj->GetNumberField(TEXT("exponent")), -80, 60);
+							N->Exponent.Expression = EC; N->Exponent.OutputIndex = 0;
+						}
+					}
+				}
+				else if (OpType == TEXT("clamp"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionClamp::StaticClass(), PosX, PosY);
+					UMaterialExpressionClamp* N = Cast<UMaterialExpressionClamp>(Expr);
+					if (N && InputNodes.Num() >= 1)
+					{
+						N->Input.Expression = InputNodes[0]; N->Input.OutputIndex = 0;
+						N->MinDefault = OpObj->HasField(TEXT("min")) ? (float)OpObj->GetNumberField(TEXT("min")) : 0.0f;
+						N->MaxDefault = OpObj->HasField(TEXT("max")) ? (float)OpObj->GetNumberField(TEXT("max")) : 1.0f;
+						if (InputNodes.Num() >= 2) { N->Min.Expression = InputNodes[1]; N->Min.OutputIndex = 0; }
+						if (InputNodes.Num() >= 3) { N->Max.Expression = InputNodes[2]; N->Max.OutputIndex = 0; }
+					}
+				}
+				else if (OpType == TEXT("sine"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionSine::StaticClass(), PosX, PosY);
+					UMaterialExpressionSine* N = Cast<UMaterialExpressionSine>(Expr);
+					if (N && InputNodes.Num() >= 1)
+					{
+						N->Input.Expression = InputNodes[0]; N->Input.OutputIndex = 0;
+						if (OpObj->HasField(TEXT("period"))) N->Period = (float)OpObj->GetNumberField(TEXT("period"));
+					}
+				}
+				else if (OpType == TEXT("cosine"))
+				{
+					Expr = UMaterialEditingLibrary::CreateMaterialExpression(NewMaterial, UMaterialExpressionCosine::StaticClass(), PosX, PosY);
+					UMaterialExpressionCosine* N = Cast<UMaterialExpressionCosine>(Expr);
+					if (N && InputNodes.Num() >= 1)
+					{
+						N->Input.Expression = InputNodes[0]; N->Input.OutputIndex = 0;
+						if (OpObj->HasField(TEXT("period"))) N->Period = (float)OpObj->GetNumberField(TEXT("period"));
+					}
+				}
+
+				if (Expr && OpObj->HasField(TEXT("output")))
+				{
+					EMaterialProperty MP = ParseMaterialProperty(OpObj->GetStringField(TEXT("output")));
+					if (MP != MP_MAX)
+						UMaterialEditingLibrary::ConnectMaterialProperty(Expr, TEXT(""), MP);
+				}
+				MathNodes.Add(Expr);
+				MathIndex++;
+			}
+		}
+
 		// Trigger shader compilation
 		if (bHasProperties)
 		{
@@ -705,3 +880,5 @@ FString HandleSetMaterialParameter(const TSharedPtr<FJsonObject>& Params)
 
 	return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
 }
+
+#endif

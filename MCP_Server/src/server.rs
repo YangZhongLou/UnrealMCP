@@ -358,6 +358,25 @@ impl UnrealMcpServer {
         self.call("delete_blueprint_graph", json!({"path": path, "graph_name": graph_name})).await
     }
 
+    #[tool(description = "Get the current level blueprint graph structure (nodes, pins, connections). Pass no params.")]
+    async fn get_level_blueprint(&self) -> String {
+        self.call("get_level_blueprint", json!({})).await
+    }
+
+    #[tool(description = "Remove nodes from a Blueprint or Level Blueprint by node IDs. Use path='__level__' for level blueprint.")]
+    async fn remove_blueprint_nodes(
+        &self,
+        #[tool(param)] path: String,
+        #[tool(param)] node_ids: Vec<String>,
+    ) -> String {
+        self.call("remove_blueprint_nodes", json!({"path": path, "node_ids": node_ids})).await
+    }
+
+    #[tool(description = "Save the current level blueprint (mark modified and save)")]
+    async fn save_level_blueprint(&self) -> String {
+        self.call("save_level_blueprint", json!({})).await
+    }
+
     // ── Asset ──
 
     #[tool(description = "List assets in a path")]
@@ -442,7 +461,8 @@ impl UnrealMcpServer {
     #[tool(description = "Create a new material asset. Supports shading_model='subsurface_profile' for jade/SSS, \
                            'default_lit', 'unlit', 'subsurface', 'clear_coat', 'thin_translucent'. \
                            Optionally set blend_mode, base_color [r,g,b], metallic, roughness, specular. \
-                           Set reuse=true to silently succeed if the material already exists.")]
+                           Set reuse=true to silently succeed if the material already exists. \
+                           Math ops: add, subtract, multiply, divide, power, clamp, sine, cosine via math array.")]
     async fn create_material(
         &self,
         #[tool(param)] path: String,
@@ -453,6 +473,7 @@ impl UnrealMcpServer {
         #[tool(param)] roughness: Option<f64>,
         #[tool(param)] specular: Option<f64>,
         #[tool(param)] reuse: Option<bool>,
+        #[tool(param)] math: Option<serde_json::Value>,
     ) -> String {
         let mut p = json!({"path": path});
         if let Some(v) = shading_model { p["shadingModel"] = json!(v); }
@@ -462,6 +483,7 @@ impl UnrealMcpServer {
         if let Some(v) = roughness { p["roughness"] = json!(v); }
         if let Some(v) = specular { p["specular"] = json!(v); }
         if let Some(v) = reuse { p["reuse"] = json!(v); }
+        if let Some(v) = math { p["math"] = json!(v); }
         self.call("create_material", p).await
     }
 
@@ -551,6 +573,191 @@ impl UnrealMcpServer {
     #[tool(description = "Get the current viewport camera position and rotation")]
     async fn get_viewport_camera(&self) -> String {
         self.call("get_viewport_camera", json!({})).await
+    }
+
+    #[tool(description = "Set the editor viewport camera location and rotation")]
+    async fn set_viewport_camera(
+        &self,
+        #[tool(param)] #[schemars(description = "Optional location [x, y, z]")] location: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional rotation [pitch, yaw, roll]")] rotation: Option<Vec<f64>>,
+    ) -> String {
+        let mut p = json!({});
+        if let Some(v) = location { p["location"] = json!(v); }
+        if let Some(v) = rotation { p["rotation"] = json!(v); }
+        self.call("set_viewport_camera", p).await
+    }
+
+    // ── Runtime Camera ──
+
+    #[tool(description = "Get the runtime game camera state (location, zoom, FOV, DOF, post-process)")]
+    async fn get_runtime_camera_state(&self) -> String {
+        self.call("get_runtime_camera_state", json!({})).await
+    }
+
+    #[tool(description = "Set the runtime game camera FOV")]
+    async fn set_runtime_camera_fov(
+        &self,
+        #[tool(param)] #[schemars(description = "Field of view in degrees (10-170)")] fov: f64,
+    ) -> String {
+        self.call("set_runtime_camera_fov", json!({"fov": fov})).await
+    }
+
+    #[tool(description = "Set the runtime game camera depth of field")]
+    async fn set_runtime_camera_dof(
+        &self,
+        #[tool(param)] #[schemars(description = "Focal distance in cm")] focal_distance: f64,
+        #[tool(param)] #[schemars(description = "Optional focal region size")] focal_region: Option<f64>,
+    ) -> String {
+        let mut p = json!({"focalDistance": focal_distance});
+        if let Some(v) = focal_region { p["focalRegion"] = json!(v); }
+        self.call("set_runtime_camera_dof", p).await
+    }
+
+    #[tool(description = "Set the runtime game camera post-processing (exposure, bloom)")]
+    async fn set_runtime_camera_post_process(
+        &self,
+        #[tool(param)] #[schemars(description = "Optional exposure bias (-10 to +10)")] exposure: Option<f64>,
+        #[tool(param)] #[schemars(description = "Optional bloom intensity (0-10)")] bloom: Option<f64>,
+    ) -> String {
+        let mut p = json!({});
+        if let Some(v) = exposure { p["exposure"] = json!(v); }
+        if let Some(v) = bloom { p["bloom"] = json!(v); }
+        self.call("set_runtime_camera_post_process", p).await
+    }
+
+    #[tool(description = "Set the runtime game camera location and zoom")]
+    async fn set_runtime_camera_transform(
+        &self,
+        #[tool(param)] #[schemars(description = "Optional location [x, y, z]")] location: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional zoom (arm length)")] zoom: Option<f64>,
+    ) -> String {
+        let mut p = json!({});
+        if let Some(v) = location { p["location"] = json!(v); }
+        if let Some(v) = zoom { p["zoom"] = json!(v); }
+        self.call("set_runtime_camera_transform", p).await
+    }
+
+    #[tool(description = "Focus the runtime game camera on an actor by name")]
+    async fn focus_runtime_camera_on_actor(
+        &self,
+        #[tool(param)] #[schemars(description = "Actor name to focus on")] actor_name: String,
+    ) -> String {
+        self.call("focus_runtime_camera_on_actor", json!({"actorName": actor_name})).await
+    }
+
+    #[tool(description = "Set the runtime game camera focal length")]
+    async fn set_runtime_camera_focal_length(
+        &self,
+        #[tool(param)] #[schemars(description = "Focal length in mm (1-1000)")] focal_length: f64,
+    ) -> String {
+        self.call("set_runtime_camera_focal_length", json!({"focalLength": focal_length})).await
+    }
+
+    #[tool(description = "Set the runtime game camera aperture (f-stop)")]
+    async fn set_runtime_camera_aperture(
+        &self,
+        #[tool(param)] #[schemars(description = "Aperture f-stop value (0.1-64)")] aperture: f64,
+    ) -> String {
+        self.call("set_runtime_camera_aperture", json!({"aperture": aperture})).await
+    }
+
+    #[tool(description = "Set the runtime game camera focus distance")]
+    async fn set_runtime_camera_focus_distance(
+        &self,
+        #[tool(param)] #[schemars(description = "Focus distance in cm")] focus_distance: f64,
+    ) -> String {
+        self.call("set_runtime_camera_focus_distance", json!({"focusDistance": focus_distance})).await
+    }
+
+    // ── Camera Rig ──
+
+    #[tool(description = "Start camera rig playback on the current camera pawn")]
+    async fn start_camera_rig(
+        &self,
+        #[tool(param)] #[schemars(description = "Name of the CameraRigActor in the scene")] rig_name: String,
+    ) -> String {
+        self.call("start_camera_rig", json!({"rigName": rig_name})).await
+    }
+
+    #[tool(description = "Stop camera rig playback")]
+    async fn stop_camera_rig(
+        &self,
+        #[tool(param)] #[schemars(description = "Name of the CameraRigActor in the scene")] rig_name: String,
+    ) -> String {
+        self.call("stop_camera_rig", json!({"rigName": rig_name})).await
+    }
+
+    #[tool(description = "Set camera rig playback speed")]
+    async fn set_camera_rig_speed(
+        &self,
+        #[tool(param)] #[schemars(description = "Name of the CameraRigActor in the scene")] rig_name: String,
+        #[tool(param)] #[schemars(description = "Playback speed in cm/s")] speed: f64,
+    ) -> String {
+        self.call("set_camera_rig_speed", json!({"rigName": rig_name, "speed": speed})).await
+    }
+
+    // ── Camera Switcher ──
+
+    #[tool(description = "Switch to a registered camera by name with blend transition")]
+    async fn switch_camera(
+        &self,
+        #[tool(param)] #[schemars(description = "Name of the registered camera to switch to")] camera_name: String,
+        #[tool(param)] #[schemars(description = "Optional blend time in seconds")] blend_time: Option<f64>,
+    ) -> String {
+        let mut p = json!({"cameraName": camera_name});
+        if let Some(v) = blend_time { p["blendTime"] = json!(v); }
+        self.call("switch_camera", p).await
+    }
+
+    #[tool(description = "Switch to the next registered camera")]
+    async fn next_camera(
+        &self,
+        #[tool(param)] #[schemars(description = "Optional blend time in seconds")] blend_time: Option<f64>,
+    ) -> String {
+        let mut p = json!({});
+        if let Some(v) = blend_time { p["blendTime"] = json!(v); }
+        self.call("next_camera", p).await
+    }
+
+    #[tool(description = "Switch to the previous registered camera")]
+    async fn prev_camera(
+        &self,
+        #[tool(param)] #[schemars(description = "Optional blend time in seconds")] blend_time: Option<f64>,
+    ) -> String {
+        let mut p = json!({});
+        if let Some(v) = blend_time { p["blendTime"] = json!(v); }
+        self.call("prev_camera", p).await
+    }
+
+    #[tool(description = "Get list of registered cameras in the scene")]
+    async fn get_camera_list(&self) -> String {
+        self.call("get_camera_list", json!({})).await
+    }
+
+    // ── Advanced Post-Process ──
+
+    #[tool(description = "Set the runtime game camera motion blur amount")]
+    async fn set_runtime_camera_motion_blur(
+        &self,
+        #[tool(param)] #[schemars(description = "Motion blur amount (0-1)")] amount: f64,
+    ) -> String {
+        self.call("set_runtime_camera_motion_blur", json!({"amount": amount})).await
+    }
+
+    #[tool(description = "Set the runtime game camera vignette intensity")]
+    async fn set_runtime_camera_vignette(
+        &self,
+        #[tool(param)] #[schemars(description = "Vignette intensity (0-10)")] intensity: f64,
+    ) -> String {
+        self.call("set_runtime_camera_vignette", json!({"intensity": intensity})).await
+    }
+
+    #[tool(description = "Set the runtime game camera chromatic aberration intensity")]
+    async fn set_runtime_camera_chromatic_aberration(
+        &self,
+        #[tool(param)] #[schemars(description = "Chromatic aberration intensity (0-10)")] intensity: f64,
+    ) -> String {
+        self.call("set_runtime_camera_chromatic_aberration", json!({"intensity": intensity})).await
     }
 
     // ── Viewport / Debug ──

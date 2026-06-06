@@ -7,3 +7,5 @@ Config/
 Binaries/
 Intermediate/
 ue_editor.log
+UnrealPlugin/
+.claude/
