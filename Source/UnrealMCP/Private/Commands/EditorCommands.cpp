@@ -15,6 +15,9 @@
 #include "Engine/Engine.h"
 #include "ImageUtils.h"
 #include "RenderingThread.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Camera/CameraActor.h"
 #include "LogCaptureDevice.h"
 #include "HAL/IConsoleManager.h"
 #include "Framework/Docking/TabManager.h"
@@ -199,6 +202,9 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("filename"))
         : TEXT("screenshot");
 
+    int32 Width = Params->HasField(TEXT("width")) ? Params->GetIntegerField(TEXT("width")) : 1920;
+    int32 Height = Params->HasField(TEXT("height")) ? Params->GetIntegerField(TEXT("height")) : 1080;
+
     bool bSuccess = false;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
@@ -208,20 +214,72 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
 
         FString FullPath = FPaths::ScreenShotDir() / (Filename + TEXT(".png"));
 
-        if (Viewport)
+        if (Viewport && World)
         {
-            FlushRenderingCommands();
-            FIntRect CaptureRect(0, 0, Viewport->GetSizeXY().X, Viewport->GetSizeXY().Y);
-            TArray<FColor> Bitmap;
-            if (Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags(), CaptureRect))
+            // Get editor viewport camera transform
+            FVector CameraLocation = FVector::ZeroVector;
+            FRotator CameraRotation = FRotator::ZeroRotator;
+            float CameraFOV = 90.0f;
+
+            if (FViewportClient* ViewportClient = Viewport->GetClient())
             {
-                TArray<uint8> CompressedBitmap;
-                FImageUtils::CompressImageArray(CaptureRect.Width(), CaptureRect.Height(), Bitmap, CompressedBitmap);
-                bSuccess = FFileHelper::SaveArrayToFile(CompressedBitmap, *FullPath);
+                if (FEditorViewportClient* EditorViewportClient = static_cast<FEditorViewportClient*>(ViewportClient))
+                {
+                    CameraLocation = EditorViewportClient->GetViewLocation();
+                    CameraRotation = EditorViewportClient->GetViewRotation();
+                    CameraFOV = EditorViewportClient->ViewFOV;
+                }
+            }
+
+            // Create temporary camera actor with scene capture
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.bNoFail = true;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+            ACameraActor* CameraActor = World->SpawnActor<ACameraActor>(CameraLocation, CameraRotation, SpawnParams);
+            if (CameraActor)
+            {
+                // Create scene capture component
+                USceneCaptureComponent2D* SceneCapture = NewObject<USceneCaptureComponent2D>(CameraActor);
+                SceneCapture->RegisterComponent();
+
+                // Setup capture to match viewport camera
+                SceneCapture->SetWorldLocation(CameraLocation);
+                SceneCapture->SetWorldRotation(CameraRotation);
+                SceneCapture->FOVAngle = CameraFOV;
+                SceneCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+
+                // Create render target
+                UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(CameraActor);
+                RenderTarget->InitCustomFormat(Width, Height, PF_B8G8R8A8, false);
+                RenderTarget->UpdateResourceImmediate(true);
+
+                SceneCapture->TextureTarget = RenderTarget;
+                SceneCapture->CaptureScene();
+
+                // Wait for render
+                FlushRenderingCommands();
+
+                // Read pixels from render target
+                FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+                if (RTResource)
+                {
+                    TArray<FColor> Bitmap;
+                    if (RTResource->ReadPixels(Bitmap))
+                    {
+                        TArray<uint8> CompressedBitmap;
+                        FImageUtils::ThumbnailCompressImageArray(Width, Height, Bitmap, CompressedBitmap);
+                        bSuccess = FFileHelper::SaveArrayToFile(CompressedBitmap, *FullPath);
+                    }
+                }
+
+                // Cleanup
+                SceneCapture->UnregisterComponent();
+                CameraActor->Destroy();
             }
         }
 
-        // Fallback
+        // Fallback: FScreenshotRequest if scene capture failed
         if (!bSuccess)
         {
             FScreenshotRequest::RequestScreenshot(Filename, false, false);
