@@ -7,6 +7,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
 #include "Components/LightComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "LevelEditorViewport.h"
 #include "Slate/SceneViewport.h"
 #include "Dom/JsonObject.h"
@@ -1087,6 +1088,67 @@ FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
     Writer->Close();
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
+}
+
+FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName = Params->GetStringField(TEXT("actorName"));
+
+    bool bHasIntensity = Params->HasField(TEXT("intensity"));
+    double Intensity = bHasIntensity ? Params->GetNumberField(TEXT("intensity")) : 0;
+    bool bHasSourceType = Params->HasField(TEXT("sourceType"));
+    int32 SourceType = bHasSourceType ? static_cast<int32>(Params->GetNumberField(TEXT("sourceType"))) : 0;
+    bool bHasRealTimeCapture = Params->HasField(TEXT("realTimeCapture"));
+    bool bRealTimeCapture = bHasRealTimeCapture ? Params->GetBoolField(TEXT("realTimeCapture")) : false;
+    bool bHasLowerHemisphereColor = Params->HasField(TEXT("lowerHemisphereColor"));
+    FLinearColor LowerHemisphereColor(FLinearColor::Black);
+    if (bHasLowerHemisphereColor)
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("lowerHemisphereColor"));
+        if (Arr.Num() >= 3)
+            LowerHemisphereColor = FLinearColor(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+    }
+    FLinearColor LightColor(FLinearColor::White);
+    if (Params->HasField(TEXT("color")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("color"));
+        if (Arr.Num() >= 3)
+            LightColor = FLinearColor(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+    }
+
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World) { ErrorMsg = TEXT("No world available"); DoneEvent->Trigger(); return; }
+
+        AActor* Actor = nullptr;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName) { Actor = *It; break; }
+        }
+        if (!Actor) { ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName); DoneEvent->Trigger(); return; }
+
+        USkyLightComponent* SkyComp = Actor->FindComponentByClass<USkyLightComponent>();
+        if (!SkyComp) { ErrorMsg = TEXT("No SkyLightComponent found on actor"); DoneEvent->Trigger(); return; }
+
+        if (bHasSourceType) SkyComp->SourceType = static_cast<ESkyLightSourceType>(SourceType);
+        if (bHasRealTimeCapture) SkyComp->bRealTimeCapture = bRealTimeCapture;
+        if (bHasIntensity) SkyComp->SetIntensity(Intensity);
+        SkyComp->SetLightColor(LightColor);
+        if (bHasLowerHemisphereColor) SkyComp->LowerHemisphereColor = LowerHemisphereColor;
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\"}}"), *ActorName);
 }
 
 #endif

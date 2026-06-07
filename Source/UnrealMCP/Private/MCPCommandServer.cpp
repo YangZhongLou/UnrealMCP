@@ -87,6 +87,8 @@ FString HandleGetCameraList(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraMotionBlur(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraVignette(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -607,6 +609,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("set_runtime_camera_chromatic_aberration"))
     {
         ResultStr = HandleSetRuntimeCameraChromaticAberration(Params);
+    }
+    else if (Method == TEXT("set_blueprint_class_default"))
+    {
+        ResultStr = HandleSetBlueprintClassDefault(Params);
+    }
+    else if (Method == TEXT("set_skylight_parameters"))
+    {
+        ResultStr = HandleSetSkyLightParameters(Params);
     }
     else
     {
