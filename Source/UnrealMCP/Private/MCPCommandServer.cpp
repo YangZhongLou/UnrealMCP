@@ -632,4 +632,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     return ResultStr;
 }
 
+
+// Stub: implementation pending
+FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params)
+{
+	return TEXT("{\"success\": false, \"error\": \"HandleSetBlueprintClassDefault not yet implemented\"}");
+}
 #endif
