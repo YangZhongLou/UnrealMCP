@@ -54,7 +54,8 @@ public class UnrealMCP : ModuleRules
                     "LevelEditor",
                     "EditorSubsystem",
                     "EditorScriptingUtilities",
-                    "AssetRegistry"
+                    "AssetRegistry",
+                    "Hexagon"
                 }
             );
         }

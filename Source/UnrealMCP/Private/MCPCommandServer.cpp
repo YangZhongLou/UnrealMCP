@@ -87,6 +87,11 @@ FString HandleGetCameraList(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraMotionBlur(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraVignette(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetTerrainLayerTexture(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetTerrainLayerMaterial(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetTerrainLayerInfo(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -608,6 +613,26 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     {
         ResultStr = HandleSetRuntimeCameraChromaticAberration(Params);
     }
+    else if (Method == TEXT("set_blueprint_class_default"))
+    {
+        ResultStr = HandleSetBlueprintClassDefault(Params);
+    }
+    else if (Method == TEXT("set_skylight_parameters"))
+    {
+        ResultStr = HandleSetSkyLightParameters(Params);
+    }
+    else if (Method == TEXT("set_terrain_layer_texture"))
+    {
+        ResultStr = HandleSetTerrainLayerTexture(Params);
+    }
+    else if (Method == TEXT("set_terrain_layer_material"))
+    {
+        ResultStr = HandleSetTerrainLayerMaterial(Params);
+    }
+    else if (Method == TEXT("get_terrain_layer_info"))
+    {
+        ResultStr = HandleGetTerrainLayerInfo(Params);
+    }
     else
     {
         TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
@@ -622,4 +647,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     return ResultStr;
 }
 
+
+// Stub: implementation pending
+FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params)
+{
+	return TEXT("{\"success\": false, \"error\": \"HandleSetBlueprintClassDefault not yet implemented\"}");
+}
 #endif
