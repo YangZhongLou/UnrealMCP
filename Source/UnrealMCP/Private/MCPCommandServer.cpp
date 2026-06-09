@@ -89,6 +89,9 @@ FString HandleSetRuntimeCameraVignette(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetRuntimeCameraChromaticAberration(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetTerrainLayerTexture(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetTerrainLayerMaterial(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetTerrainLayerInfo(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -617,6 +620,18 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("set_skylight_parameters"))
     {
         ResultStr = HandleSetSkyLightParameters(Params);
+    }
+    else if (Method == TEXT("set_terrain_layer_texture"))
+    {
+        ResultStr = HandleSetTerrainLayerTexture(Params);
+    }
+    else if (Method == TEXT("set_terrain_layer_material"))
+    {
+        ResultStr = HandleSetTerrainLayerMaterial(Params);
+    }
+    else if (Method == TEXT("get_terrain_layer_info"))
+    {
+        ResultStr = HandleGetTerrainLayerInfo(Params);
     }
     else
     {
