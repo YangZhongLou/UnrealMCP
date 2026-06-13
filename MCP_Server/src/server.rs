@@ -154,6 +154,11 @@ impl UnrealMcpServer {
         self.call("run_console_command", json!({"command": command})).await
     }
 
+    #[tool(description = "Get the current level path and name. Returns {path, name}.")]
+    async fn get_current_level(&self) -> String {
+        self.call("get_current_level", json!({})).await
+    }
+
     #[tool(description = "Save the current level")]
     async fn save_current_level(&self) -> String {
         self.call("save_current_level", json!({})).await

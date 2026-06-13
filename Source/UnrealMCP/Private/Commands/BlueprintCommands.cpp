@@ -1346,4 +1346,85 @@ FString HandleSaveLevelBlueprint(const TSharedPtr<FJsonObject>& Params)
     return TEXT("{\"success\":true,\"result\":{\"saved\":true}}");
 }
 
+FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Path = Params->GetStringField(TEXT("path"));
+    FString PropertyName = Params->GetStringField(TEXT("propertyName"));
+
+    FString ErrorMsg;
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+    {
+        UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Path);
+        if (!Blueprint)
+        {
+            ErrorMsg = FString::Printf(TEXT("Blueprint not found: %s"), *Path);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        UClass* GeneratedClass = Blueprint->GeneratedClass;
+        if (!GeneratedClass)
+        {
+            ErrorMsg = TEXT("Blueprint has no generated class");
+            DoneEvent->Trigger();
+            return;
+        }
+
+        UObject* CDO = GeneratedClass->GetDefaultObject();
+        if (!CDO)
+        {
+            ErrorMsg = TEXT("No CDO available");
+            DoneEvent->Trigger();
+            return;
+        }
+
+        FProperty* Property = GeneratedClass->FindPropertyByName(FName(*PropertyName));
+        if (!Property)
+        {
+            ErrorMsg = FString::Printf(TEXT("Property not found: %s"), *PropertyName);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        // Set object pointer property to nullptr
+        if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Property))
+        {
+            ObjProp->SetObjectPropertyValue_InContainer(CDO, nullptr);
+        }
+        else if (FClassProperty* ClassProp = CastField<FClassProperty>(Property))
+        {
+            ClassProp->SetObjectPropertyValue_InContainer(CDO, nullptr);
+        }
+        else if (FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(Property))
+        {
+            SoftClassProp->SetObjectPropertyValue_InContainer(CDO, nullptr);
+        }
+        else if (FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(Property))
+        {
+            SoftObjProp->SetObjectPropertyValue_InContainer(CDO, nullptr);
+        }
+        else
+        {
+            ErrorMsg = FString::Printf(TEXT("Property '%s' is not an object/class reference type"), *PropertyName);
+            DoneEvent->Trigger();
+            return;
+        }
+
+        Blueprint->MarkPackageDirty();
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+        DoneEvent->Trigger();
+    });
+
+    DoneEvent->Wait();
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    if (!ErrorMsg.IsEmpty())
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    return FString::Printf(TEXT("{\"success\":true,\"result\":{\"path\":\"%s\",\"property\":\"%s\",\"cleared\":true}}"), *Path, *PropertyName);
+}
+
 #endif
