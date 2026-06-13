@@ -15,6 +15,7 @@ FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params);
 FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params);
 FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params);
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params);
 FString HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetBlueprintInfo(const TSharedPtr<FJsonObject>& Params);
@@ -313,6 +314,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("save_current_level"))
     {
         ResultStr = HandleSaveCurrentLevel(Params);
+    }
+    else if (Method == TEXT("get_current_level"))
+    {
+        ResultStr = HandleGetCurrentLevel(Params);
     }
     else if (Method == TEXT("create_level"))
     {

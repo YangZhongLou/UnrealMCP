@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnrealClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 13377):
+    def __init__(self, host: str = "127.0.0.1", port: int = 13378):
         self.host = host
         self.port = port
         self.socket: Optional[socket.socket] = None
@@ -34,11 +34,12 @@ class UnrealClient:
             logger.info("Disconnected from Unreal")
 
     def send_command(self, method: str, params: dict) -> dict:
+        """Send a command to port 13378 (MCPCommandServer) using simple JSON + newline protocol."""
         if not self.socket and not self.connect():
             return {"success": False, "error": "Not connected to Unreal Engine"}
 
         request = {
-            "id": f"cmd_{id(self)}_{method}",
+            "id": f"cmd_{method}",
             "method": method,
             "params": params
         }
@@ -47,14 +48,23 @@ class UnrealClient:
             message = json.dumps(request) + "\n"
             self.socket.sendall(message.encode("utf-8"))
 
-            response_data = self.socket.recv(65536).decode("utf-8").strip()
+            response_data = b""
+            while True:
+                chunk = self.socket.recv(65536)
+                if not chunk:
+                    break
+                response_data += chunk
+                if b"\n" in response_data:
+                    break
+
             if not response_data:
                 return {"success": False, "error": "Empty response from Unreal"}
 
-            response = json.loads(response_data)
-            return response
+            return json.loads(response_data.decode("utf-8").strip())
 
         except socket.timeout:
+            logger.warning("Command timeout, reconnecting...")
+            self.disconnect()
             return {"success": False, "error": "Command timeout"}
         except Exception as e:
             logger.error(f"Command failed: {e}")

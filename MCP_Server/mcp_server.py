@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("UnrealMCP")
-unreal_client = UnrealClient(host="127.0.0.1", port=13377)
+unreal_client = UnrealClient(host="127.0.0.1", port=13378)
 
 
 def register_all_tools():
