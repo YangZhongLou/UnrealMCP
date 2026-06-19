@@ -1,6 +1,7 @@
 use unreal_mcp_server::unreal_client::UnrealClient;
 use serde_json::json;
 use std::time::Instant;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod mock_unreal_server;
 use mock_unreal_server::MockUnrealServer;
@@ -34,9 +35,15 @@ async fn test_concurrent_connections() {
                 _ = rx.recv() => break,
                 result = listener.accept() => {
                     if let Ok((mut socket, _)) = result {
-                        let resp = json!({"id":"0","success":true,"result":{"status":"ok"}}).to_string() + "\n";
-                        use tokio::io::AsyncWriteExt;
-                        let _ = socket.write_all(resp.as_bytes()).await;
+                        tokio::spawn(async move {
+                            let mut buf = vec![0u8; 1024];
+                            // Read the request first so the client doesn't get a RST
+                            // before it finishes sending.
+                            let _ = socket.read(&mut buf).await;
+
+                            let resp = json!({"id":"0","success":true,"result":{"status":"ok"}}).to_string() + "\n";
+                            let _ = socket.write_all(resp.as_bytes()).await;
+                        });
                     }
                 }
             }
