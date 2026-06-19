@@ -36,10 +36,12 @@ ClanSimulator/Plugins/UnrealMCP/MCP_Server/target/release/unreal-mcp-server.exe
 
 | 服务 | 默认端口 | 协议 | 用途 | AI 客户端连哪个 |
 |---|---|---|---|---|
-| **Command Server** | `13377` | 行尾 `\n` 分隔的 JSON | Actor / 蓝图 / 资产 / 编辑器工具 | **Rust MCP Server 默认连这个** |
-| **JSON-RPC Server** | `13379` | JSON-RPC 长度前缀 | UMG / 运行时相机 / 部分高级功能 | 其他自定义 MCP 客户端 |
+| **Command Server** | `13377` | 行尾 `\n` 分隔的 JSON | Actor / 蓝图 / 资产 / 编辑器工具 / 运行时相机**设置** | **Rust MCP Server 默认连这个** |
+| **JSON-RPC Server** | `13379` | JSON-RPC 长度前缀 | UMG 预览相关工具 / `get_runtime_camera_state` | 其他自定义 MCP 客户端 |
 
 > 日常通过 Rust MCP Server 使用时，只需要关心 `13377`。
+>
+> 注意：`set_runtime_camera_*` 等运行时相机修改工具在 **13377**；只有 `get_runtime_camera_state` 在 **13379**。
 
 ---
 
@@ -105,7 +107,7 @@ JsonRpcServerPort=13379
 
 - `command` 必须是**绝对路径**，且路径中每个 `\` 都要写成 `\\`。
 - `UNREAL_MCP_ADDR` 必须与 `CommandServerPort` 一致。
-- 不需要 `"type": "stdio"` 的客户端可省略，Claude Code / Kimi Code CLI 等常用配置支持该字段。
+- `"type": "stdio"` 是否支持取决于客户端；Claude Code / Cursor / Trae 等支持，如果不支持直接省略即可。
 
 ### 3.5 启动使用
 
@@ -195,9 +197,9 @@ rotation=[0,0,90]   ; pitch=0, yaw=0, roll=90
 
 ### 6.4 Editor 模式 vs Runtime 模式
 
-- **Command Server（13377）**：只在编辑器内可用，用于场景编辑、资产操作、蓝图修改。
-- **JSON-RPC Server（13379）**：部分工具可在 PIE / Runtime 下工作，如运行时相机控制。
-- 如果 AI 客户端主要做关卡编辑，确保 UE 处于编辑器模式，而不是 PIE。
+- **Command Server（13377）**：只在编辑器内可用，用于场景编辑、资产操作、蓝图修改、运行时相机设置。
+- **JSON-RPC Server（13379）**：用于 UMG 预览相关工具，以及 `get_runtime_camera_state`。
+- 如果 AI 客户端主要做关卡编辑，确保 UE 处于编辑器模式（而非 Standalone / Packaged）。
 
 ### 6.5 不要手动运行 Rust Server
 
