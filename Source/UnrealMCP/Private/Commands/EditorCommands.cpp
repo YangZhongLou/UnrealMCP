@@ -1051,6 +1051,18 @@ FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
         }
     }
 
+    FString TypeStr = Params->HasField(TEXT("type"))
+        ? Params->GetStringField(TEXT("type"))
+        : TEXT("");
+
+    const float FOV = Params->HasField(TEXT("fov"))
+        ? static_cast<float>(Params->GetNumberField(TEXT("fov")))
+        : -1.0f;
+
+    const float OrthoZoom = Params->HasField(TEXT("ortho_zoom"))
+        ? static_cast<float>(Params->GetNumberField(TEXT("ortho_zoom")))
+        : -1.0f;
+
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
     AsyncTask(ENamedThreads::GameThread, [&]()
@@ -1067,8 +1079,36 @@ FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
 
         if (ViewportClient)
         {
+            if (TypeStr.Equals(TEXT("perspective"), ESearchCase::IgnoreCase))
+            {
+                ViewportClient->SetViewportType(LVT_Perspective);
+            }
+            else if (TypeStr.Equals(TEXT("top"), ESearchCase::IgnoreCase))
+            {
+                ViewportClient->SetViewportType(LVT_OrthoXY);
+            }
+            else if (TypeStr.Equals(TEXT("front"), ESearchCase::IgnoreCase))
+            {
+                ViewportClient->SetViewportType(LVT_OrthoXZ);
+            }
+            else if (TypeStr.Equals(TEXT("side"), ESearchCase::IgnoreCase))
+            {
+                ViewportClient->SetViewportType(LVT_OrthoYZ);
+            }
+
             ViewportClient->SetViewLocation(TargetLocation);
             ViewportClient->SetViewRotation(TargetRotation);
+
+            if (FOV > 0.0f)
+            {
+                ViewportClient->ViewFOV = FOV;
+            }
+
+            if (OrthoZoom > 0.0f)
+            {
+                ViewportClient->SetOrthoZoom(OrthoZoom);
+            }
+
             ViewportClient->Invalidate();
         }
 
@@ -1081,6 +1121,7 @@ FString HandleSetViewportCamera(const TSharedPtr<FJsonObject>& Params)
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("location"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetLocation.X, TargetLocation.Y, TargetLocation.Z));
     Result->SetStringField(TEXT("rotation"), FString::Printf(TEXT("[%.1f, %.1f, %.1f]"), TargetRotation.Pitch, TargetRotation.Yaw, TargetRotation.Roll));
+    Result->SetStringField(TEXT("type"), TypeStr);
 
     FString ResultStr;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
