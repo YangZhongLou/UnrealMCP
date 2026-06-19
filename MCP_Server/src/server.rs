@@ -201,11 +201,6 @@ impl UnrealMcpServer {
         self.call("focus_viewport", p).await
     }
 
-    #[tool(description = "Get information about the currently open level")]
-    async fn get_current_level(&self) -> String {
-        self.call("get_current_level", json!({})).await
-    }
-
     #[tool(description = "Get list of currently selected actors in the editor")]
     async fn get_selected_actors(&self) -> String {
         self.call("get_selected_actors", json!({})).await

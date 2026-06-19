@@ -1,4 +1,4 @@
-﻿#if WITH_EDITOR
+#if WITH_EDITOR
 #include "MCPCommandServer.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
@@ -653,9 +653,4 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 }
 
 
-// Stub: implementation pending
-FString HandleSetBlueprintClassDefault(const TSharedPtr<FJsonObject>& Params)
-{
-	return TEXT("{\"success\": false, \"error\": \"HandleSetBlueprintClassDefault not yet implemented\"}");
-}
 #endif
