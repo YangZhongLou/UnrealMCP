@@ -366,9 +366,10 @@ async fn test_real_ue_get_asset_list() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     let r = client.send_command("get_asset_list", json!({
-        "path": "/Game"
+        "path": "/Game",
+        "limit": 10
     })).await.unwrap();
-    println!("Asset list: {}", serde_json::to_string_pretty(&r).unwrap());
+    println!("Asset list count: {}", r["result"]["count"]);
     assert_eq!(r["success"], true, "get_asset_list failed: {:?}", r);
     assert!(r["result"]["count"].as_u64().is_some(), "Should have count field");
 }
@@ -1119,7 +1120,7 @@ async fn test_real_ue_create_material_instance() {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_ue_play_in_editor() {
+async fn test_real_ue_zzz_play_in_editor() {
     let mut client = UnrealClient::new("127.0.0.1:13377");
 
     // Spawn a PlayerStart so PIE doesn't crash the engine (minimal project has none)
@@ -1183,9 +1184,12 @@ async fn test_real_ue_generate_cpp_class() {
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let class_name = format!("TestGenClass_{}", timestamp);
 
+    let output_dir = format!("D:/temp/ue_cpp_test_{}", timestamp);
+
     let r = client.send_command("generate_cpp_class", json!({
         "className": class_name,
-        "parentClass": "AActor"
+        "parentClass": "AActor",
+        "output_dir": output_dir
     })).await.unwrap();
     println!("GenCPP: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["success"], true, "generate_cpp_class failed: {:?}", r);

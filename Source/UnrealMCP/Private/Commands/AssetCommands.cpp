@@ -1,4 +1,4 @@
-﻿#if WITH_EDITOR
+#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EditorAssetLibrary.h"
@@ -15,6 +15,14 @@ FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params)
     FString Path = Params->GetStringField(TEXT("path"));
     if (Path.IsEmpty()) { Path = TEXT("/Game"); }
 
+    // Optional limit to avoid multi-megabyte responses on large projects.
+    // Pass 0 (or omit) for unlimited.
+    int32 Limit = 0;
+    if (Params->HasField(TEXT("limit")))
+    {
+        Limit = static_cast<int32>(Params->GetNumberField(TEXT("limit")));
+    }
+
     TArray<TSharedPtr<FJsonValue>> Assets;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
@@ -26,6 +34,11 @@ FString HandleGetAssetList(const TSharedPtr<FJsonObject>& Params)
 
         for (const FAssetData& AssetData : AssetDataList)
         {
+            if (Limit > 0 && Assets.Num() >= Limit)
+            {
+                break;
+            }
+
             TSharedPtr<FJsonObject> Obj = MakeShareable(new FJsonObject);
             Obj->SetStringField(TEXT("name"), AssetData.AssetName.ToString());
             Obj->SetStringField(TEXT("path"), AssetData.GetObjectPathString());
@@ -243,8 +256,12 @@ FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
+        // Suppress any export-options dialogs.
+        bool bPrevUnattended = GIsRunningUnattendedScript;
+        GIsRunningUnattendedScript = true;
+
         UObject* Asset = LoadObject<UObject>(nullptr, *AssetPath);
-        if (!Asset) { ErrorMsg = FString::Printf(TEXT("Asset not found: %s"), *AssetPath); DoneEvent->Trigger(); return; }
+        if (!Asset) { ErrorMsg = FString::Printf(TEXT("Asset not found: %s"), *AssetPath); GIsRunningUnattendedScript = bPrevUnattended; DoneEvent->Trigger(); return; }
 
         FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
         TArray<FString> AssetsToExport = { AssetPath };
@@ -253,6 +270,8 @@ FString HandleExportAsset(const TSharedPtr<FJsonObject>& Params)
         Result->SetStringField(TEXT("asset_path"), AssetPath);
         Result->SetStringField(TEXT("output_dir"), OutputDir);
         Result->SetStringField(TEXT("asset_name"), Asset->GetName());
+
+        GIsRunningUnattendedScript = bPrevUnattended;
         DoneEvent->Trigger();
     });
 

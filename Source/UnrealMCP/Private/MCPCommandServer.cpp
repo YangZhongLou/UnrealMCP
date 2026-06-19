@@ -240,12 +240,36 @@ void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
 
             FString ResponseStr = ProcessCommand(RequestStr);
 
+            // Append a double-newline delimiter so the Rust client can reliably
+            // find the end of the response even when the JSON itself is pretty-printed
+            // and contains single newlines. This also lets us send responses larger
+            // than the old 64 KiB one-shot buffer.
+            ResponseStr += TEXT("\n\n");
+
             FTCHARToUTF8 UTF8Response(*ResponseStr);
+            int32 TotalLen = UTF8Response.Length();
             int32 BytesSent = 0;
-            ClientSocket->Send((const uint8*)UTF8Response.Get(), UTF8Response.Length(), BytesSent);
+            while (BytesSent < TotalLen)
+            {
+                int32 Sent = 0;
+                if (!ClientSocket->Send((const uint8*)UTF8Response.Get() + BytesSent, TotalLen - BytesSent, Sent))
+                {
+                    UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send failed"));
+                    break;
+                }
+                if (Sent <= 0)
+                {
+                    UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send returned 0"));
+                    break;
+                }
+                BytesSent += Sent;
+            }
         }
 
-        FPlatformProcess::Sleep(0.001f);
+        // One command per connection. This prevents a blocked/stuck client from
+        // pinning the single server thread, and it lets us safely send large
+        // responses without worrying about the client closing mid-send.
+        break;
     }
 }
 

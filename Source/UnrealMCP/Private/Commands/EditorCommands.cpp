@@ -1,4 +1,4 @@
-﻿#if WITH_EDITOR
+#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Editor.h"
 #include "Selection.h"
@@ -389,54 +389,118 @@ FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params)
         ? Params->GetStringField(TEXT("module"))
         : FApp::GetProjectName();
 
+    // Optional output directory. When omitted, files are written into the project's
+    // Source/<Module>/<ClassName> directory (which may trigger a compile prompt).
+    FString OutputDir;
+    if (Params->HasField(TEXT("output_dir")))
+    {
+        OutputDir = Params->GetStringField(TEXT("output_dir"));
+    }
+
     FString ProjectDir = FPaths::ProjectDir();
-    FString SourceDir = FPaths::Combine(ProjectDir, TEXT("Source"), ModuleName);
-    FString ClassDir = FPaths::Combine(SourceDir, ClassName);
+    FString ClassDir = OutputDir.IsEmpty()
+        ? FPaths::Combine(ProjectDir, TEXT("Source"), ModuleName, ClassName)
+        : FPaths::Combine(OutputDir, ClassName);
+
+    // Derive the correct class-name prefix from the parent class. This makes
+    // generated AActor-derived classes compile correctly (UHT requires A* for
+    // AActor subclasses). Defaults to A if the parent prefix is unknown.
+    TCHAR DesiredPrefix = (ParentClass.Len() > 0) ? ParentClass[0] : TEXT('A');
+    if (DesiredPrefix != TEXT('A') && DesiredPrefix != TEXT('U'))
+    {
+        DesiredPrefix = TEXT('A');
+    }
+    FString PrefixedClassName = FString::Printf(TEXT("%c%s"), DesiredPrefix, *ClassName);
+
+    // Parent-class include path. These are the canonical headers for the most
+    // common bases; fall back to "<ParentClass>.h" for anything else.
+    FString ParentInclude;
+    if (ParentClass == TEXT("AActor"))
+    {
+        ParentInclude = TEXT("GameFramework/Actor.h");
+    }
+    else if (ParentClass == TEXT("UObject"))
+    {
+        ParentInclude = TEXT("UObject/Object.h");
+    }
+    else if (ParentClass == TEXT("UActorComponent"))
+    {
+        ParentInclude = TEXT("Components/ActorComponent.h");
+    }
+    else if (ParentClass == TEXT("USceneComponent"))
+    {
+        ParentInclude = TEXT("Components/SceneComponent.h");
+    }
+    else
+    {
+        ParentInclude = ParentClass + TEXT(".h");
+    }
+
+    // Tick setup appropriate to the inheritance hierarchy.
+    FString TickLine;
+    if (DesiredPrefix == TEXT('A'))
+    {
+        TickLine = TEXT("\tPrimaryActorTick.bCanEverTick = true;\n");
+    }
+    else if (ParentClass.EndsWith(TEXT("Component")))
+    {
+        TickLine = TEXT("\tPrimaryComponentTick.bCanEverTick = true;\n");
+    }
+    else
+    {
+        TickLine = TEXT("");
+    }
 
     IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+
+    // Suppress any file dialogs while creating directories.
+    bool bPrevUnattended = GIsRunningUnattendedScript;
+    GIsRunningUnattendedScript = true;
     if (!PlatformFile.DirectoryExists(*ClassDir))
     {
         PlatformFile.CreateDirectoryTree(*ClassDir);
     }
+    GIsRunningUnattendedScript = bPrevUnattended;
 
     FString HeaderContent = FString::Printf(TEXT(
         "#pragma once\n\n"
         "#include \"CoreMinimal.h\"\n"
-        "#include \"%s.h\"\n"
+        "#include \"%s\"\n"
         "#include \"%s.generated.h\"\n\n"
         "UCLASS()\n"
-        "class %s_API U%s : public %s\n"
+        "class %s_API %s : public %s\n"
         "{\n"
         "\tGENERATED_BODY()\n\n"
         "public:\n"
-        "\tU%s();\n\n"
+        "\t%s();\n\n"
         "protected:\n"
         "\tvirtual void BeginPlay() override;\n\n"
         "public:\n"
         "\tvirtual void Tick(float DeltaTime) override;\n"
         "};\n"),
-        *ParentClass, *ClassName,
-        *ModuleName.ToUpper(), *ClassName, *ParentClass,
-        *ClassName);
+        *ParentInclude, *ClassName,
+        *ModuleName.ToUpper(), *PrefixedClassName, *ParentClass,
+        *PrefixedClassName);
 
     FString CppContent = FString::Printf(TEXT(
         "#include \"%s.h\"\n\n"
-        "U%s::U%s()\n"
+        "%s::%s()\n"
         "{\n"
-        "\tPrimaryComponentTick.bCanEverTick = true;\n"
+        "%s"
         "}\n\n"
-        "void U%s::BeginPlay()\n"
+        "void %s::BeginPlay()\n"
         "{\n"
         "\tSuper::BeginPlay();\n"
         "}\n\n"
-        "void U%s::Tick(float DeltaTime)\n"
+        "void %s::Tick(float DeltaTime)\n"
         "{\n"
         "\tSuper::Tick(DeltaTime);\n"
         "}\n"),
         *ClassName,
-        *ClassName, *ClassName,
-        *ClassName,
-        *ClassName);
+        *PrefixedClassName, *PrefixedClassName,
+        *TickLine,
+        *PrefixedClassName,
+        *PrefixedClassName);
 
     FString HeaderPath = FPaths::Combine(ClassDir, ClassName + TEXT(".h"));
     FString CppPath = FPaths::Combine(ClassDir, ClassName + TEXT(".cpp"));

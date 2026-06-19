@@ -8,8 +8,8 @@ use mock_unreal_server::MockUnrealServer;
 
 #[tokio::test]
 async fn test_response_timing() {
-    let mock = MockUnrealServer::start(13400).await;
-    let mut client = UnrealClient::new("127.0.0.1:13400");
+    let (mock, port) = MockUnrealServer::start(0).await;
+    let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
 
     let start = Instant::now();
     let response = client.send_command("get_editor_info", json!({})).await.unwrap();
@@ -41,7 +41,7 @@ async fn test_concurrent_connections() {
                             // before it finishes sending.
                             let _ = socket.read(&mut buf).await;
 
-                            let resp = json!({"id":"0","success":true,"result":{"status":"ok"}}).to_string() + "\n";
+                            let resp = json!({"id":"0","success":true,"result":{"status":"ok"}}).to_string() + "\n\n";
                             let _ = socket.write_all(resp.as_bytes()).await;
                         });
                     }
@@ -77,8 +77,8 @@ async fn test_concurrent_connections() {
 
 #[tokio::test]
 async fn test_many_sequential_commands() {
-    let mock = MockUnrealServer::start(13402).await;
-    let mut client = UnrealClient::new("127.0.0.1:13402");
+    let (mock, port) = MockUnrealServer::start(0).await;
+    let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
 
     let start = Instant::now();
     for i in 0..100 {
@@ -99,7 +99,7 @@ async fn test_reconnection() {
     let port = 13403;
 
     // First server instance
-    let mock1 = MockUnrealServer::start(port).await;
+    let (mock1, _) = MockUnrealServer::start(port).await;
     let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
     let r1 = client.send_command("get_editor_info", json!({})).await.unwrap();
     assert_eq!(r1["success"], true);
@@ -109,7 +109,7 @@ async fn test_reconnection() {
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // Second server instance on same port
-    let mock2 = MockUnrealServer::start(port).await;
+    let (mock2, _) = MockUnrealServer::start(port).await;
     let r2 = client.send_command("get_editor_info", json!({})).await;
     mock2.stop().await;
 
@@ -127,8 +127,8 @@ async fn test_reconnection() {
 
 #[tokio::test]
 async fn test_large_response() {
-    let mock = MockUnrealServer::start(13404).await;
-    let mut client = UnrealClient::new("127.0.0.1:13404");
+    let (mock, port) = MockUnrealServer::start(0).await;
+    let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
 
     let start = Instant::now();
     let response = client.send_command("get_actor_list", json!({})).await.unwrap();
