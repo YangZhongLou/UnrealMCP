@@ -215,6 +215,8 @@ UnrealMCP/
 
 ## 安装使用
 
+> 新手请先阅读 **[docs/usage-guide.md](docs/usage-guide.md)**，覆盖最常见踩坑点。
+
 ### 1. 构建 MCP Server (Rust)
 
 ```bash
