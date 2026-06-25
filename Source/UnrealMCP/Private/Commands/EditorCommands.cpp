@@ -16,6 +16,8 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
 #include "Engine/Engine.h"
+#include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
 #include "ImageUtils.h"
 #include "RenderingThread.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -25,6 +27,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Framework/Docking/TabManager.h"
 #include "LevelEditorSubsystem.h"
+#include "Settings/LevelEditorPlaySettings.h"
 #include "Async/Async.h"
 #include "Misc/PackageName.h"
 #include "HAL/FileManager.h"
@@ -193,7 +196,12 @@ FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params)
     {
         if (GEditor)
         {
-            GEditor->RequestPlaySession(FRequestPlaySessionParams());
+            FRequestPlaySessionParams RequestParams;
+            // Force PIE to run inside the active editor viewport, not a separate window.
+            ULevelEditorPlaySettings* PlaySettings = NewObject<ULevelEditorPlaySettings>();
+            PlaySettings->LastExecutedPlayModeType = PlayMode_InViewPort;
+            RequestParams.EditorPlaySettings = PlaySettings;
+            GEditor->RequestPlaySession(RequestParams);
             bSuccess = true;
         }
         DoneEvent->Trigger();
@@ -271,7 +279,23 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             Viewport = GEngine->GameViewport->Viewport;
         }
 
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        // Use the PIE world when a play session is active, otherwise the editor world.
+        UWorld* World = nullptr;
+        if (bIsPIE && GEditor)
+        {
+            for (const FWorldContext& Context : GEditor->GetWorldContexts())
+            {
+                if (Context.WorldType == EWorldType::PIE && Context.World())
+                {
+                    World = Context.World();
+                    break;
+                }
+            }
+        }
+        if (!World)
+        {
+            World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        }
 
         if (Viewport && World)
         {
@@ -286,66 +310,116 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             FPlatformProcess::Sleep(0.1f);
             FlushRenderingCommands();
 
-            // Get editor viewport camera transform
+            // Determine the camera transform to capture.
+            // In PIE we must use the player camera, not the editor viewport camera.
             FVector CameraLocation = FVector::ZeroVector;
             FRotator CameraRotation = FRotator::ZeroRotator;
             float CameraFOV = 90.0f;
 
-            if (FViewportClient* ViewportClient = Viewport->GetClient())
+            if (bIsPIE)
             {
-                if (FEditorViewportClient* EditorViewportClient = static_cast<FEditorViewportClient*>(ViewportClient))
+                if (APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0))
                 {
-                    CameraLocation = EditorViewportClient->GetViewLocation();
-                    CameraRotation = EditorViewportClient->GetViewRotation();
-                    CameraFOV = EditorViewportClient->ViewFOV;
+                    // Prefer the actual view target's camera component; this is the most
+                    // reliable source when we have spawned a dedicated camera actor.
+                    if (AActor* ViewTarget = PC->GetViewTarget())
+                    {
+                        if (UCameraComponent* CamComp = ViewTarget->FindComponentByClass<UCameraComponent>())
+                        {
+                            CameraLocation = CamComp->GetComponentLocation();
+                            CameraRotation = CamComp->GetComponentRotation();
+                            CameraFOV = CamComp->FieldOfView;
+                        }
+                    }
+
+                    // Fallback to the player camera manager.
+                    if (CameraLocation.IsNearlyZero() && CameraRotation.IsNearlyZero())
+                    {
+                        if (APlayerCameraManager* PCM = PC->PlayerCameraManager)
+                        {
+                            CameraLocation = PCM->GetCameraLocation();
+                            CameraRotation = PCM->GetCameraRotation();
+                            CameraFOV = PCM->GetFOVAngle();
+                        }
+                    }
                 }
             }
 
-            // Create temporary camera actor with scene capture
-            FActorSpawnParameters SpawnParams;
-            SpawnParams.bNoFail = true;
-            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-            ACameraActor* CameraActor = World->SpawnActor<ACameraActor>(CameraLocation, CameraRotation, SpawnParams);
-            if (CameraActor)
+            if (CameraLocation.IsNearlyZero() && CameraRotation.IsNearlyZero())
             {
-                // Create scene capture component
-                USceneCaptureComponent2D* SceneCapture = NewObject<USceneCaptureComponent2D>(CameraActor);
-                SceneCapture->RegisterComponent();
-
-                // Setup capture to match viewport camera
-                SceneCapture->SetWorldLocation(CameraLocation);
-                SceneCapture->SetWorldRotation(CameraRotation);
-                SceneCapture->FOVAngle = CameraFOV;
-                SceneCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
-
-                // Create render target
-                UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(CameraActor);
-                RenderTarget->InitCustomFormat(Width, Height, PF_B8G8R8A8, false);
-                RenderTarget->UpdateResourceImmediate(true);
-
-                SceneCapture->TextureTarget = RenderTarget;
-                SceneCapture->CaptureScene();
-
-                // Wait for render
-                FlushRenderingCommands();
-
-                // Read pixels from render target
-                FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
-                if (RTResource)
+                if (FViewportClient* ViewportClient = Viewport->GetClient())
                 {
-                    TArray<FColor> Bitmap;
-                    if (RTResource->ReadPixels(Bitmap))
+                    if (FEditorViewportClient* EditorViewportClient = static_cast<FEditorViewportClient*>(ViewportClient))
                     {
-                        TArray<uint8> CompressedBitmap;
-                        FImageUtils::ThumbnailCompressImageArray(Width, Height, Bitmap, CompressedBitmap);
-                        bSuccess = FFileHelper::SaveArrayToFile(CompressedBitmap, *FullPath);
+                        CameraLocation = EditorViewportClient->GetViewLocation();
+                        CameraRotation = EditorViewportClient->GetViewRotation();
+                        CameraFOV = EditorViewportClient->ViewFOV;
                     }
                 }
+            }
 
-                // Cleanup
-                SceneCapture->UnregisterComponent();
-                CameraActor->Destroy();
+            // In PIE, the most reliable capture is the HighResShot console command
+            // on the active game viewport. Scene capture often misses PIE-specific rendering.
+            if (bIsPIE)
+            {
+                // Fire the HighResShot command and return immediately; the Python
+                // side will poll for the file. Waiting here would stall the game
+                // thread that processes the screenshot request itself.
+                FString HighResCmd = FString::Printf(TEXT("HighResShot 1 filename=%s"), *Filename);
+                if (GEngine)
+                {
+                    GEngine->Exec(World, *HighResCmd);
+                }
+                bSuccess = true;
+            }
+            else
+            {
+                // Create temporary camera actor with scene capture for editor viewport
+                FActorSpawnParameters SpawnParams;
+                SpawnParams.bNoFail = true;
+                SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+                ACameraActor* CameraActor = World->SpawnActor<ACameraActor>(CameraLocation, CameraRotation, SpawnParams);
+                if (CameraActor)
+                {
+                    // Create scene capture component
+                    USceneCaptureComponent2D* SceneCapture = NewObject<USceneCaptureComponent2D>(CameraActor);
+                    SceneCapture->RegisterComponent();
+
+                    // Setup capture to match viewport camera
+                    SceneCapture->SetWorldLocation(CameraLocation);
+                    SceneCapture->SetWorldRotation(CameraRotation);
+                    SceneCapture->FOVAngle = CameraFOV;
+                    SceneCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+
+                    // Create render target
+                    UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(CameraActor);
+                    RenderTarget->InitCustomFormat(Width, Height, PF_B8G8R8A8, false);
+                    RenderTarget->UpdateResourceImmediate(true);
+
+                    SceneCapture->TextureTarget = RenderTarget;
+                    SceneCapture->CaptureScene();
+
+                    // Wait for render
+                    FlushRenderingCommands();
+
+                    // Read pixels from render target
+                    FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
+                    if (RTResource)
+                    {
+                        TArray<FColor> Bitmap;
+                        if (RTResource->ReadPixels(Bitmap))
+                        {
+                            TArray<uint8> CompressedBitmap;
+                            FImageUtils::ThumbnailCompressImageArray(Width, Height, Bitmap, CompressedBitmap);
+                            bSuccess = FFileHelper::SaveArrayToFile(CompressedBitmap, *FullPath);
+                        }
+                    }
+
+                    // Cleanup
+                    SceneCapture->UnregisterComponent();
+                    CameraActor->Destroy();
+                }
             }
         }
 

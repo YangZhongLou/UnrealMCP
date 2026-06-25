@@ -420,6 +420,41 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
             return;
         }
 
+        // In PIE, spawn a dedicated camera actor and make the player look through it.
+        // This avoids fighting DefaultPawn's rotation constraints and spring-arm offsets.
+        UWorld* World = GetPlayWorld();
+        APlayerController* PC = (World ? UGameplayStatics::GetPlayerController(World, 0) : nullptr);
+        ACameraActor* PinnedCamera = nullptr;
+        if (PC)
+        {
+            for (TActorIterator<ACameraActor> It(World); It; ++It)
+            {
+                if (It->GetActorNameOrLabel().StartsWith(TEXT("MCP_PIE_Camera")))
+                {
+                    PinnedCamera = *It;
+                    break;
+                }
+            }
+            if (!PinnedCamera)
+            {
+                FActorSpawnParameters SpawnParams;
+                SpawnParams.Name = FName(TEXT("MCP_PIE_Camera"));
+                SpawnParams.bNoFail = true;
+                SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+                PinnedCamera = World->SpawnActor<ACameraActor>(SpawnParams);
+                if (PinnedCamera)
+                {
+                    PinnedCamera->SetActorLabel(TEXT("MCP_PIE_Camera"));
+                }
+            }
+            if (PinnedCamera)
+            {
+                PC->SetViewTargetWithBlend(PinnedCamera, 0.0f);
+                Target = PinnedCamera;
+                SpringArm = nullptr;
+            }
+        }
+
         if (Params->HasField(TEXT("location")))
         {
             const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("location"));
@@ -427,6 +462,33 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
             {
                 FVector NewLocation(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
                 Target->SetActorLocation(NewLocation);
+            }
+        }
+
+        if (Params->HasField(TEXT("rotation")))
+        {
+            const TArray<TSharedPtr<FJsonValue>>& Arr = Params->GetArrayField(TEXT("rotation"));
+            if (Arr.Num() >= 3)
+            {
+                FRotator NewRotation(Arr[0]->AsNumber(), Arr[1]->AsNumber(), Arr[2]->AsNumber());
+                Target->SetActorRotation(NewRotation);
+                if (UCameraComponent* CamComp = GetCameraComponent(Target))
+                {
+                    CamComp->SetWorldRotation(NewRotation);
+                }
+                if (PC)
+                {
+                    PC->SetControlRotation(NewRotation);
+                }
+            }
+        }
+
+        if (Params->HasField(TEXT("fov")))
+        {
+            double NewFOV = Params->GetNumberField(TEXT("fov"));
+            if (UCameraComponent* CamComp = GetCameraComponent(Target))
+            {
+                CamComp->SetFieldOfView(static_cast<float>(NewFOV));
             }
         }
 
@@ -441,11 +503,17 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
         FVector Loc = Target->GetActorLocation();
+        FRotator Rot = Target->GetActorRotation();
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Z)));
         ResultObj->SetArrayField(TEXT("location"), LocArr);
+        TArray<TSharedPtr<FJsonValue>> RotArr;
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Pitch)));
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Yaw)));
+        RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Roll)));
+        ResultObj->SetArrayField(TEXT("rotation"), RotArr);
         ResultObj->SetNumberField(TEXT("zoom"), SpringArm ? SpringArm->TargetArmLength : 0.0);
 
         ResultStr = BuildSuccessResponse(ResultObj, RequestId);
