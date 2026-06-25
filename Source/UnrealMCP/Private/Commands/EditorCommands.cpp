@@ -33,6 +33,21 @@
 #include "HAL/FileManager.h"
 #include "Containers/Ticker.h"
 
+static UWorld* GetActiveWorldForMCP()
+{
+    if (GEditor && GEditor->IsPlaySessionInProgress())
+    {
+        for (const FWorldContext& Context : GEngine->GetWorldContexts())
+        {
+            if (Context.WorldType == EWorldType::PIE)
+            {
+                return Context.World();
+            }
+        }
+    }
+    return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+}
+
 FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 {
     FString Command = Params->GetStringField(TEXT("command"));
@@ -41,12 +56,8 @@ FString HandleRunConsoleCommand(const TSharedPtr<FJsonObject>& Params)
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-        if (World && World->GetGameInstance())
-        {
-            GEngine->Exec(World, *Command);
-        }
-        else if (World)
+        UWorld* World = GetActiveWorldForMCP();
+        if (World)
         {
             GEngine->Exec(World, *Command);
         }
