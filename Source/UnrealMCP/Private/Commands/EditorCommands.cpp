@@ -26,6 +26,10 @@
 
 #include "Slate/SceneViewport.h"
 
+#include "Components/Button.h"
+
+#include "Components/Widget.h"
+
 #include "Dom/JsonObject.h"
 
 #include "Serialization/JsonSerializer.h"
@@ -2211,6 +2215,246 @@ FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params)
         return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
 
     return FString::Printf(TEXT("{\"success\":true,\"result\":{\"actor\":\"%s\"}}"), *ActorName);
+
+}
+
+FString HandleSimulateInputKey(const TSharedPtr<FJsonObject>& Params)
+
+{
+
+    FString KeyName;
+
+    if (Params->HasField(TEXT("key")))
+
+    {
+
+        KeyName = Params->GetStringField(TEXT("key"));
+
+    }
+
+    if (KeyName.IsEmpty())
+
+    {
+
+        return TEXT("{\"success\":false,\"error\":\"Missing 'key' parameter\"}");
+
+    }
+
+
+
+    bool bSuccess = false;
+
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+
+    {
+
+        FKey Key(*KeyName);
+
+        if (!Key.IsValid())
+
+        {
+
+            if (KeyName.Equals(TEXT("Space"), ESearchCase::IgnoreCase) || KeyName.Equals(TEXT("SpaceBar"), ESearchCase::IgnoreCase))
+
+            {
+
+                Key = EKeys::SpaceBar;
+
+            }
+
+            else if (KeyName.Equals(TEXT("Enter"), ESearchCase::IgnoreCase) || KeyName.Equals(TEXT("Return"), ESearchCase::IgnoreCase))
+
+            {
+
+                Key = EKeys::Enter;
+
+            }
+
+            else if (KeyName.Equals(TEXT("Escape"), ESearchCase::IgnoreCase) || KeyName.Equals(TEXT("Esc"), ESearchCase::IgnoreCase))
+
+            {
+
+                Key = EKeys::Escape;
+
+            }
+
+        }
+
+
+
+        if (Key.IsValid())
+
+        {
+
+            FModifierKeysState ModifierKeys;
+
+            FKeyEvent KeyDownEvent(Key, ModifierKeys, 0, false, 0, 0);
+
+            FSlateApplication::Get().ProcessKeyDownEvent(KeyDownEvent);
+
+            FKeyEvent KeyUpEvent(Key, ModifierKeys, 0, false, 0, 0);
+
+            FSlateApplication::Get().ProcessKeyUpEvent(KeyUpEvent);
+
+            bSuccess = true;
+
+        }
+
+        DoneEvent->Trigger();
+
+    });
+
+    DoneEvent->Wait();
+
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+
+
+    if (!bSuccess)
+
+    {
+
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"Invalid key: %s\"}"), *KeyName);
+
+    }
+
+    return TEXT("{\"success\":true,\"result\":{\"simulated\":true}}");
+
+}
+
+FString HandleClickWidget(const TSharedPtr<FJsonObject>& Params)
+
+{
+
+    FString WidgetName;
+
+    if (Params->HasField(TEXT("name")))
+
+    {
+
+        WidgetName = Params->GetStringField(TEXT("name"));
+
+    }
+
+    if (WidgetName.IsEmpty())
+
+    {
+
+        return TEXT("{\"success\":false,\"error\":\"Missing 'name' parameter\"}");
+
+    }
+
+
+
+    bool bClicked = false;
+
+    FString ErrorMsg;
+
+    FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+    AsyncTask(ENamedThreads::GameThread, [&]()
+
+    {
+
+        UWorld* TargetWorld = nullptr;
+
+        if (GEditor)
+
+        {
+
+            FWorldContext* PIEContext = GEditor->GetPIEWorldContext();
+
+            TargetWorld = PIEContext ? PIEContext->World() : nullptr;
+
+        }
+
+        if (!TargetWorld && GEngine && GEngine->GameViewport)
+
+        {
+
+            TargetWorld = GEngine->GameViewport->GetWorld();
+
+        }
+
+        if (!TargetWorld)
+
+        {
+
+            ErrorMsg = TEXT("No active play world");
+
+            DoneEvent->Trigger();
+
+            return;
+
+        }
+
+
+
+        for (TObjectIterator<UWidget> It; It; ++It)
+
+        {
+
+            UWidget* Widget = *It;
+
+            if (!Widget || Widget->GetWorld() != TargetWorld)
+
+            {
+
+                continue;
+
+            }
+
+            if (Widget->GetName() == WidgetName)
+
+            {
+
+                if (UButton* Button = Cast<UButton>(Widget))
+
+                {
+
+                    Button->OnClicked.Broadcast();
+
+                    bClicked = true;
+
+                }
+
+                break;
+
+            }
+
+        }
+
+
+
+        if (!bClicked && ErrorMsg.IsEmpty())
+
+        {
+
+            ErrorMsg = FString::Printf(TEXT("Widget not found or not clickable: %s"), *WidgetName);
+
+        }
+
+        DoneEvent->Trigger();
+
+    });
+
+    DoneEvent->Wait();
+
+    FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+
+
+    if (!bClicked)
+
+    {
+
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+
+    }
+
+    return TEXT("{\"success\":true,\"result\":{\"clicked\":true}}");
 
 }
 

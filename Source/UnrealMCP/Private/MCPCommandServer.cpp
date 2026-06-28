@@ -16,6 +16,8 @@ FString HandleSaveCurrentLevel(const TSharedPtr<FJsonObject>& Params);
 FString HandlePlayInEditor(const TSharedPtr<FJsonObject>& Params);
 FString HandleStopPlayInEditor(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params);
+FString HandleSimulateInputKey(const TSharedPtr<FJsonObject>& Params);
+FString HandleClickWidget(const TSharedPtr<FJsonObject>& Params);
 FString HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params);
 FString HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetBlueprintInfo(const TSharedPtr<FJsonObject>& Params);
@@ -345,6 +347,14 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("get_current_level"))
     {
         ResultStr = HandleGetCurrentLevel(Params);
+    }
+    else if (Method == TEXT("simulate_input_key"))
+    {
+        ResultStr = HandleSimulateInputKey(Params);
+    }
+    else if (Method == TEXT("click_widget"))
+    {
+        ResultStr = HandleClickWidget(Params);
     }
     else if (Method == TEXT("create_level"))
     {
