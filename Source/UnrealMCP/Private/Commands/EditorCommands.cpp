@@ -29,6 +29,9 @@
 #include "Components/Button.h"
 
 #include "Components/Widget.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 
 #include "Dom/JsonObject.h"
 
@@ -484,6 +487,7 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
 
     int32 Width = Params->HasField(TEXT("width")) ? Params->GetIntegerField(TEXT("width")) : 1920;
     int32 Height = Params->HasField(TEXT("height")) ? Params->GetIntegerField(TEXT("height")) : 1080;
+    bool bForceSceneCapture = Params->HasField(TEXT("force_scene_capture")) ? Params->GetBoolField(TEXT("force_scene_capture")) : false;
 
     bool bSuccess = false;
     FString FullPath;
@@ -503,22 +507,34 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
 
         bool bIsPIE = GEditor && GEditor->IsPlaySessionInProgress();
 
-        // Resolve the active viewport. Prefer the editor's active viewport because
-        // PIE in-viewport renders into it; GEngine->GameViewport may point at a stale
-        // or non-PIE surface.
+        // Resolve the active viewport. In PIE prefer the PIE world context's viewport;
+        // GEngine->GameViewport can point at the editor viewport after a seamless/map
+        // travel, which renders the old world or the default sky view.
         FViewport* Viewport = nullptr;
-        if (GEditor)
+        if (bIsPIE && GEditor)
         {
-            Viewport = GEditor->GetActiveViewport();
+            if (FWorldContext* PIEContext = GEditor->GetPIEWorldContext())
+            {
+                if (PIEContext->GameViewport)
+                {
+                    Viewport = PIEContext->GameViewport->Viewport;
+                }
+            }
         }
         if (!Viewport && GEngine && GEngine->GameViewport)
         {
             Viewport = GEngine->GameViewport->Viewport;
         }
+        if (!Viewport && GEditor)
+        {
+            Viewport = GEditor->GetActiveViewport();
+        }
 
         // Primary PIE path: synchronously read the game viewport's rendered pixels.
         // This matches exactly what the player sees and avoids scene-capture transform issues.
-        if (bIsPIE && Viewport && !bSuccess)
+        // If the caller forces scene capture (e.g. after seamless travel when the viewport can
+        // be stale/editor-only), skip this path entirely.
+        if (bIsPIE && Viewport && !bSuccess && !bForceSceneCapture)
         {
             // Force a fresh render so we don't read back a stale frame captured before
             // the latest game-state change.
@@ -526,6 +542,9 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             {
                 GEditor->RedrawLevelEditingViewports(true);
             }
+            // Draw one PIE frame explicitly; after seamless travel the viewport can be
+            // stuck showing the previous world's frame or the default sky.
+            Viewport->Draw(true);
 
             FIntPoint ViewSize = Viewport->GetSizeXY();
             if (ViewSize.X > 0 && ViewSize.Y > 0)
@@ -661,42 +680,44 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         // bookkeeping and is much faster than FScreenshotRequest.
         if (!bSuccess && bIsPIE && World && ViewTarget)
         {
-            FVector CaptureLocation = CameraLocation;
-            FRotator CaptureRotation = CameraRotation;
-            float CaptureFOV = CameraFOV;
+            // Prefer the PlayerCameraManager transform: it is the authoritative rendered view and
+            // is unaffected by stale camera-component bookkeeping after seamless travel.
+            FVector CaptureLocation = !PCMLocation.IsNearlyZero() ? PCMLocation : CameraLocation;
+            FRotator CaptureRotation = !PCMLocation.IsNearlyZero() ? PCMRotation : CameraRotation;
+            float CaptureFOV = PCMFOV > 0.0f ? PCMFOV : CameraFOV;
 
-            // For the project's isometric camera pawn, capture a deterministic top-down view
-            // centred on the pawn location (automation moves it over the hex grid).
-            if (ViewTarget && ViewTarget->GetName().Contains(TEXT("IsometricCameraPawn")))
-            {
-                FVector PawnLocation = ViewTarget->GetActorLocation();
-                CaptureLocation = PawnLocation + FVector(0.0f, 0.0f, 1000.0f);
-                CaptureRotation = FRotator(0.0f, 0.0f, 0.0f);
-                CaptureFOV = 60.0f;
-            }
+            // Mirror the source camera's projection mode / ortho width so the scene capture
+            // matches the player's view.
+            UCameraComponent* ActiveCamComp = ViewTarget->FindComponentByClass<UCameraComponent>();
+            ECameraProjectionMode::Type CaptureProjection = ActiveCamComp ? (ECameraProjectionMode::Type)ActiveCamComp->ProjectionMode : ECameraProjectionMode::Perspective;
+            float CaptureOrthoWidth = ActiveCamComp ? ActiveCamComp->OrthoWidth : 512.0f;
 
             if (!CaptureLocation.IsNearlyZero())
             {
-                UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Scene capture at %s rot %s"), *CaptureLocation.ToString(), *CaptureRotation.ToString());
+                UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Scene capture at %s rot %s fov=%.1f proj=%d ortho=%.1f"), *CaptureLocation.ToString(), *CaptureRotation.ToString(), CaptureFOV, (int32)CaptureProjection, CaptureOrthoWidth);
 
                 FActorSpawnParameters SpawnParams;
                 SpawnParams.bNoFail = true;
                 SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-                AActor* CaptureActor = World->SpawnActor<AActor>(AActor::StaticClass(), CaptureLocation, CaptureRotation, SpawnParams);
+                AActor* CaptureActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
                 if (CaptureActor)
                 {
                     USceneCaptureComponent2D* SceneCapture = NewObject<USceneCaptureComponent2D>(CaptureActor);
                     SceneCapture->RegisterComponent();
                     if (USceneComponent* Root = CaptureActor->GetRootComponent())
                     {
-                        SceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+                        SceneCapture->AttachToComponent(Root, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
                     }
 
-                    CaptureActor->SetActorLocation(CaptureLocation);
-                    CaptureActor->SetActorRotation(CaptureRotation);
-                    SceneCapture->SetRelativeLocation(FVector::ZeroVector);
-                    SceneCapture->SetRelativeRotation(FRotator::ZeroRotator);
+                    // Set the capture component's world transform explicitly so it matches the
+                    // player's camera. UpdateComponentToWorld() forces the render transform to be
+                    // applied before CaptureScene() runs on the same frame.
+                    SceneCapture->SetWorldLocation(CaptureLocation);
+                    SceneCapture->SetWorldRotation(CaptureRotation);
+                    SceneCapture->UpdateComponentToWorld();
+                    SceneCapture->ProjectionType = CaptureProjection;
+                    SceneCapture->OrthoWidth = CaptureOrthoWidth;
                     SceneCapture->FOVAngle = CaptureFOV;
                     SceneCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
                     SceneCapture->bCaptureEveryFrame = false;
@@ -2392,48 +2413,31 @@ FString HandleClickWidget(const TSharedPtr<FJsonObject>& Params)
 
 
 
-        for (TObjectIterator<UWidget> It; It; ++It)
-
+        // Search only the active user-widget trees for the named widget. Iterating
+        // all UWidget UObjects can be extremely slow and block the game thread long
+        // enough for the MCP connection to time out.
+        TArray<UUserWidget*> AllUserWidgets;
+        UWidgetBlueprintLibrary::GetAllWidgetsOfClass(TargetWorld, AllUserWidgets, UUserWidget::StaticClass(), false);
+        for (UUserWidget* UserWidget : AllUserWidgets)
         {
-
-            UWidget* Widget = *It;
-
-            if (!Widget || Widget->GetWorld() != TargetWorld)
-
+            if (!UserWidget || !UserWidget->WidgetTree)
             {
-
                 continue;
-
             }
-
-            if (Widget->GetName() == WidgetName)
-
+            if (UWidget* Found = UserWidget->WidgetTree->FindWidget(FName(*WidgetName)))
             {
-
-                if (UButton* Button = Cast<UButton>(Widget))
-
+                if (UButton* Button = Cast<UButton>(Found))
                 {
-
                     Button->OnClicked.Broadcast();
-
                     bClicked = true;
-
                 }
-
                 break;
-
             }
-
         }
 
-
-
         if (!bClicked && ErrorMsg.IsEmpty())
-
         {
-
             ErrorMsg = FString::Printf(TEXT("Widget not found or not clickable: %s"), *WidgetName);
-
         }
 
         DoneEvent->Trigger();
