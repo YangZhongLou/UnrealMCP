@@ -38,7 +38,8 @@ public class UnrealMCP : ModuleRules
                 "SlateCore",
                 "UMG",
                 "RenderCore",
-                "CinematicCamera"
+                "CinematicCamera",
+                "ImageWrapper"
             }
         );
 

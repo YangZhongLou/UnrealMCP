@@ -193,8 +193,13 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
 
         TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
 
+        // Prefer the active PlayerCameraManager because it returns the actual view
+        // location/rotation/FOV, including spring-arm offsets and LookAt logic.
+        APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+        APlayerCameraManager* CameraManager = PC ? PC->PlayerCameraManager : nullptr;
+
         // Location
-        FVector Loc = Target->GetActorLocation();
+        FVector Loc = CameraManager ? CameraManager->GetCameraLocation() : Target->GetActorLocation();
         TArray<TSharedPtr<FJsonValue>> LocArr;
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.X)));
         LocArr.Add(MakeShareable(new FJsonValueNumber(Loc.Y)));
@@ -202,7 +207,7 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
         ResultObj->SetArrayField(TEXT("location"), LocArr);
 
         // Rotation
-        FRotator Rot = Target->GetActorRotation();
+        FRotator Rot = CameraManager ? CameraManager->GetCameraRotation() : Target->GetActorRotation();
         TArray<TSharedPtr<FJsonValue>> RotArr;
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Pitch)));
         RotArr.Add(MakeShareable(new FJsonValueNumber(Rot.Yaw)));
@@ -213,7 +218,8 @@ FString HandleGetRuntimeCameraState(const TSharedPtr<FJsonObject>& Params)
         ResultObj->SetNumberField(TEXT("zoom"), SpringArm ? SpringArm->TargetArmLength : 0.0);
 
         // FOV
-        ResultObj->SetNumberField(TEXT("fov"), CamComp ? CamComp->FieldOfView : 90.0);
+        const double FOV = CameraManager ? CameraManager->GetFOVAngle() : (CamComp ? CamComp->FieldOfView : 90.0);
+        ResultObj->SetNumberField(TEXT("fov"), FOV);
 
         // Post-process
         ResultObj->SetNumberField(TEXT("exposure"), CamComp ? CamComp->PostProcessSettings.AutoExposureBias : 0.0);
