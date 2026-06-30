@@ -490,21 +490,21 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     bool bForceSceneCapture = Params->HasField(TEXT("force_scene_capture")) ? Params->GetBoolField(TEXT("force_scene_capture")) : false;
 
     bool bSuccess = false;
-    FString FullPath;
+    bool bUseScreenshotRequest = false;
+    FString Directory = Params->HasField(TEXT("directory"))
+        ? Params->GetStringField(TEXT("directory"))
+        : FPaths::ScreenShotDir();
+    FPaths::RemoveDuplicateSlashes(Directory);
+    FPaths::NormalizeDirectoryName(Directory);
+    if (!Directory.IsEmpty())
+    {
+        IFileManager::Get().MakeDirectory(*Directory, true);
+    }
+    FString FullPath = Directory / (Filename + TEXT(".png"));
+
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        FString Directory = Params->HasField(TEXT("directory"))
-            ? Params->GetStringField(TEXT("directory"))
-            : FPaths::ScreenShotDir();
-        FPaths::RemoveDuplicateSlashes(Directory);
-        FPaths::NormalizeDirectoryName(Directory);
-        if (!Directory.IsEmpty())
-        {
-            IFileManager::Get().MakeDirectory(*Directory, true);
-        }
-        FullPath = Directory / (Filename + TEXT(".png"));
-
         bool bIsPIE = GEditor && GEditor->IsPlaySessionInProgress();
 
         // Resolve the active viewport. In PIE prefer the PIE world context's viewport;
@@ -530,57 +530,27 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             Viewport = GEditor->GetActiveViewport();
         }
 
-        // Primary PIE path: synchronously read the game viewport's rendered pixels.
-        // This matches exactly what the player sees and avoids scene-capture transform issues.
-        // If the caller forces scene capture (e.g. after seamless travel when the viewport can
-        // be stale/editor-only), skip this path entirely.
+        // Primary PIE path: use UE's screenshot request so the captured image includes
+        // Slate/UMG overlays (HUD, on-screen widgets). ReadPixels on the viewport render
+        // target only captures the 3D scene, which is why automation screenshots were
+        // missing the in-game UI.
+        //
+        // We only *queue* the request here; waiting for the file is done on the calling
+        // thread. FScreenshotRequest processes its queue on the game thread during the
+        // next engine tick, so blocking the game thread to wait for the file deadlocks.
         if (bIsPIE && Viewport && !bSuccess && !bForceSceneCapture)
         {
-            // Force a fresh render so we don't read back a stale frame captured before
-            // the latest game-state change.
+            // Force a fresh render so we don't capture a stale frame.
             if (GEditor)
             {
                 GEditor->RedrawLevelEditingViewports(true);
             }
-            // Draw one PIE frame explicitly; after seamless travel the viewport can be
-            // stuck showing the previous world's frame or the default sky.
             Viewport->Draw(true);
 
-            FIntPoint ViewSize = Viewport->GetSizeXY();
-            if (ViewSize.X > 0 && ViewSize.Y > 0)
-            {
-                TArray<FColor> Bitmap;
-                if (Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags()))
-                {
-                    for (FColor& Pixel : Bitmap)
-                    {
-                        Pixel.A = 255;
-                    }
-                    IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-                    TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
-                    if (ImageWrapper.IsValid() && ImageWrapper->SetRaw(Bitmap.GetData(), Bitmap.Num() * sizeof(FColor), ViewSize.X, ViewSize.Y, ERGBFormat::BGRA, 8))
-                    {
-                        const TArray64<uint8>& Compressed = ImageWrapper->GetCompressed();
-                        if (FFileHelper::SaveArrayToFile(Compressed, *FullPath))
-                        {
-                            bSuccess = true;
-                            UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Saved viewport readback to %s (%dx%d)"), *FullPath, ViewSize.X, ViewSize.Y);
-                        }
-                        else
-                        {
-                            UE_LOG(LogUnrealMCP, Warning, TEXT("[MCP Screenshot] Failed to save viewport readback to %s"), *FullPath);
-                        }
-                    }
-                    else
-                    {
-                        UE_LOG(LogUnrealMCP, Warning, TEXT("[MCP Screenshot] Failed to encode viewport readback as PNG"));
-                    }
-                }
-                else
-                {
-                    UE_LOG(LogUnrealMCP, Warning, TEXT("[MCP Screenshot] Viewport ReadPixels failed"));
-                }
-            }
+            // bInShowUI=true keeps the HUD and other Slate widgets in the shot.
+            FScreenshotRequest::RequestScreenshot(*FullPath, false, true);
+            bUseScreenshotRequest = true;
+            UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Queued viewport UI screenshot request to %s"), *FullPath);
         }
 
         // Resolve the world to spawn the capture camera in (fallback only).
@@ -756,25 +726,48 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             }
         }
 
-        // Final fallback to UE's screenshot request.
-        if (!bSuccess)
-        {
-            FScreenshotRequest::RequestScreenshot(*FullPath, false, false);
-            double Timeout = 20.0;
-            double StartTime = FPlatformTime::Seconds();
-            while (!IFileManager::Get().FileExists(*FullPath))
-            {
-                if (FPlatformTime::Seconds() - StartTime > Timeout) break;
-                FPlatformProcess::Sleep(0.05f);
-            }
-            bSuccess = IFileManager::Get().FileExists(*FullPath);
-        }
-
         DoneEvent->Trigger();
     });
 
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+    // If we queued a viewport UI screenshot, wait for it on the calling thread.
+    // FScreenshotRequest dispatches the save on the game thread during a tick,
+    // so we must not block the game thread itself.
+    if (bUseScreenshotRequest)
+    {
+        double Timeout = 20.0;
+        double StartTime = FPlatformTime::Seconds();
+        while (!IFileManager::Get().FileExists(*FullPath))
+        {
+            if (FPlatformTime::Seconds() - StartTime > Timeout) break;
+            FPlatformProcess::Sleep(0.05f);
+        }
+        bSuccess = IFileManager::Get().FileExists(*FullPath);
+        if (bSuccess)
+        {
+            UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Saved viewport UI screenshot to %s"), *FullPath);
+        }
+        else
+        {
+            UE_LOG(LogUnrealMCP, Warning, TEXT("[MCP Screenshot] Viewport UI screenshot request timed out"));
+        }
+    }
+
+    // Final fallback without Slate UI (or a second attempt if the UI request failed).
+    if (!bSuccess)
+    {
+        FScreenshotRequest::RequestScreenshot(*FullPath, false, false);
+        double Timeout = 20.0;
+        double StartTime = FPlatformTime::Seconds();
+        while (!IFileManager::Get().FileExists(*FullPath))
+        {
+            if (FPlatformTime::Seconds() - StartTime > Timeout) break;
+            FPlatformProcess::Sleep(0.05f);
+        }
+        bSuccess = IFileManager::Get().FileExists(*FullPath);
+    }
 
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
     Result->SetStringField(TEXT("path"), FullPath);
