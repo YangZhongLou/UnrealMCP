@@ -548,7 +548,8 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             Viewport->Draw(true);
 
             // bInShowUI=true keeps the HUD and other Slate widgets in the shot.
-            FScreenshotRequest::RequestScreenshot(*FullPath, false, true);
+            // Signature: RequestScreenshot(Filename, bShowUI, bAddFilenameSuffix).
+            FScreenshotRequest::RequestScreenshot(*FullPath, true, false);
             bUseScreenshotRequest = true;
             UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Queued viewport UI screenshot request to %s"), *FullPath);
         }
@@ -648,7 +649,11 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         // IsometricCameraPawn we use a top-down view centred on the pawn (the automation code
         // moves the pawn over the hex grid), which avoids fighting spring-arm transform
         // bookkeeping and is much faster than FScreenshotRequest.
-        if (!bSuccess && bIsPIE && World && ViewTarget)
+        //
+        // If we already queued a viewport UI screenshot request, do NOT run the scene
+        // capture fallback: it writes to the same file path and would overwrite the
+        // Slate/UMG-inclusive shot with a pure 3D render.
+        if (!bSuccess && !bUseScreenshotRequest && bIsPIE && World && ViewTarget)
         {
             // Prefer the PlayerCameraManager transform: it is the authoritative rendered view and
             // is unaffected by stale camera-component bookkeeping after seamless travel.
