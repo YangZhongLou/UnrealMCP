@@ -298,11 +298,23 @@ static TFuture<void> LaunchGenerationJob(
         }
 
         FString Params = FString::Printf(TEXT("\"%s\" %s"), *ScriptPath, *Args);
-        TArray<FString> OutputLines;
-        const bool bProcessOk = FMonitoredProcess::RunProcessSynchronous(PythonExe, Params, OutputLines, 600.0f);
-        const FString Output = FString::Join(OutputLines, TEXT("\n"));
+        TSharedPtr<FMonitoredProcess> Process = MakeShareable(new FMonitoredProcess(PythonExe, Params, true, true));
+        if (!Process->Launch())
+        {
+            FScopeLock Lock(&GenerationJobLock);
+            Job->Status = EGenStatus::Failed;
+            Job->Progress = 1.0;
+            Job->Message = TEXT("Failed to launch generation subprocess");
+            return;
+        }
 
-        if (!bProcessOk)
+        while (Process->Update())
+        {
+            FPlatformProcess::Sleep(0.1f);
+        }
+
+        const FString Output = Process->GetFullOutputWithoutDelegate();
+        if (Process->GetReturnCode() != 0)
         {
             FScopeLock Lock(&GenerationJobLock);
             Job->Status = EGenStatus::Failed;
@@ -600,8 +612,8 @@ FString HandleGetGenerateAndImport3DStatus(const TSharedPtr<FJsonObject>& Params
     }
     else
     {
-        Result->SetNullField(TEXT("assetPath"));
-        Result->SetNullField(TEXT("actorName"));
+        Result->SetField(TEXT("assetPath"), MakeShareable(new FJsonValueNull()));
+        Result->SetField(TEXT("actorName"), MakeShareable(new FJsonValueNull()));
     }
 
     return VfxBuildSuccess(Result);
