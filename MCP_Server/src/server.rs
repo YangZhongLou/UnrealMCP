@@ -517,6 +517,192 @@ impl UnrealMcpServer {
         self.call("set_material_parameter", p).await
     }
 
+    // ── VFX ──
+
+    #[tool(description = "Generate a 3D model via Hunyuan3D or import an existing mesh file, then spawn it in the scene.")]
+    async fn generate_and_import_3d(
+        &self,
+        #[tool(param)] #[schemars(description = "Import destination path, e.g. /Game/Generated/Meshes")]
+        destination_path: String,
+        #[tool(param)] #[schemars(description = "Existing GLB/OBJ/FBX file absolute path")]
+        mesh_file: Option<String>,
+        #[tool(param)] #[schemars(description = "Text prompt for Hunyuan3D generation")]
+        prompt: Option<String>,
+        #[tool(param)] #[schemars(description = "Reference image absolute path for image-to-3D")]
+        reference_image: Option<String>,
+        #[tool(param)] #[schemars(description = "Optional spawned actor name")]
+        actor_name: Option<String>,
+        #[tool(param)] #[schemars(description = "Optional location [x, y, z]")]
+        location: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional scale [x, y, z]")]
+        scale: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional generation parameters object")]
+        generation_params: Option<Value>,
+        #[tool(param)] #[schemars(description = "Wait for generation to complete before returning")]
+        wait_for_completion: Option<bool>,
+    ) -> String {
+        if destination_path.is_empty() {
+            return "Failed: Missing required parameter: destinationPath".into();
+        }
+        let has_source = mesh_file.as_ref().map_or(false, |s| !s.is_empty())
+            || prompt.as_ref().map_or(false, |s| !s.is_empty())
+            || reference_image.as_ref().map_or(false, |s| !s.is_empty());
+        if !has_source {
+            return "Failed: Must provide meshFile, prompt, or referenceImage".into();
+        }
+        let mut p = json!({"destinationPath": destination_path});
+        if let Some(v) = mesh_file { p["meshFile"] = json!(v); }
+        if let Some(v) = prompt { p["prompt"] = json!(v); }
+        if let Some(v) = reference_image { p["referenceImage"] = json!(v); }
+        if let Some(v) = actor_name { p["actorName"] = json!(v); }
+        if let Some(v) = location { p["location"] = json!(v); }
+        if let Some(v) = rotation { p["rotation"] = json!(v); }
+        if let Some(v) = scale { p["scale"] = json!(v); }
+        if let Some(v) = generation_params { p["generationParams"] = json!(v); }
+        if let Some(v) = wait_for_completion { p["waitForCompletion"] = json!(v); }
+        self.call("generate_and_import_3d", p).await
+    }
+
+    #[tool(description = "Get the status of an asynchronous generate_and_import_3d job.")]
+    async fn get_generate_and_import_3d_status(
+        &self,
+        #[tool(param)] #[schemars(description = "Job id returned by generate_and_import_3d")]
+        job_id: String,
+    ) -> String {
+        if job_id.is_empty() {
+            return "Failed: Missing required parameter: jobId".into();
+        }
+        self.call("get_generate_and_import_3d_status", json!({"jobId": job_id})).await
+    }
+
+    #[tool(description = "Create a Material Instance Constant from a parent material and texture maps.")]
+    async fn create_material_from_textures(
+        &self,
+        #[tool(param)] #[schemars(description = "New MIC asset path, e.g. /Game/Generated/Materials/MI_Rock")]
+        path: String,
+        #[tool(param)] #[schemars(description = "Parent material asset path")]
+        parent_path: String,
+        #[tool(param)] #[schemars(description = "Parameter name to texture path map, e.g. {\"BaseColor\": \"/Game/...\"}")]
+        maps: Value,
+        #[tool(param)] #[schemars(description = "Optional scalar parameter overrides")]
+        scalar_parameters: Option<Value>,
+        #[tool(param)] #[schemars(description = "Optional vector parameter overrides")]
+        vector_parameters: Option<Value>,
+        #[tool(param)] #[schemars(description = "Reuse existing MIC if path already exists")]
+        reuse: Option<bool>,
+    ) -> String {
+        if path.is_empty() {
+            return "Failed: Missing required parameter: path".into();
+        }
+        if parent_path.is_empty() {
+            return "Failed: Missing required parameter: parentPath".into();
+        }
+        if !maps.is_object() {
+            return "Failed: maps must be an object".into();
+        }
+        let mut p = json!({"path": path, "parentPath": parent_path, "maps": maps});
+        if let Some(v) = scalar_parameters { p["scalarParameters"] = json!(v); }
+        if let Some(v) = vector_parameters { p["vectorParameters"] = json!(v); }
+        if let Some(v) = reuse { p["reuse"] = json!(v); }
+        self.call("create_material_from_textures", p).await
+    }
+
+    #[tool(description = "Set a texture parameter on an actor's material instance.")]
+    async fn set_texture_parameter(
+        &self,
+        #[tool(param)] #[schemars(description = "Actor name in the scene")]
+        actor_name: String,
+        #[tool(param)] #[schemars(description = "Texture parameter name, e.g. BaseColor")]
+        parameter_name: String,
+        #[tool(param)] #[schemars(description = "Texture asset path")]
+        texture_path: String,
+        #[tool(param)] #[schemars(description = "Optional target mesh component name")]
+        component_name: Option<String>,
+        #[tool(param)] #[schemars(description = "Optional material slot index")]
+        slot_index: Option<i32>,
+    ) -> String {
+        if actor_name.is_empty() {
+            return "Failed: Missing required parameter: actorName".into();
+        }
+        if parameter_name.is_empty() {
+            return "Failed: Missing required parameter: parameterName".into();
+        }
+        if texture_path.is_empty() {
+            return "Failed: Missing required parameter: texturePath".into();
+        }
+        let mut p = json!({"actorName": actor_name, "parameterName": parameter_name, "texturePath": texture_path});
+        if let Some(v) = component_name { p["componentName"] = json!(v); }
+        if let Some(v) = slot_index { p["slotIndex"] = json!(v); }
+        self.call("set_texture_parameter", p).await
+    }
+
+    #[tool(description = "Duplicate a Niagara System template and optionally spawn it in the scene.")]
+    async fn duplicate_niagara_system(
+        &self,
+        #[tool(param)] #[schemars(description = "Source Niagara System asset path")]
+        template_path: String,
+        #[tool(param)] #[schemars(description = "New Niagara System asset path")]
+        new_path: String,
+        #[tool(param)] #[schemars(description = "Optional initial User parameter overrides")]
+        initial_parameters: Option<Value>,
+        #[tool(param)] #[schemars(description = "Spawn a Niagara actor in the scene")]
+        spawn_actor: Option<bool>,
+        #[tool(param)] #[schemars(description = "Optional spawned actor name")]
+        actor_name: Option<String>,
+        #[tool(param)] #[schemars(description = "Optional location [x, y, z]")]
+        location: Option<Vec<f64>>,
+        #[tool(param)] #[schemars(description = "Optional rotation [pitch, yaw, roll]")]
+        rotation: Option<Vec<f64>>,
+    ) -> String {
+        if template_path.is_empty() {
+            return "Failed: Missing required parameter: templatePath".into();
+        }
+        if new_path.is_empty() {
+            return "Failed: Missing required parameter: newPath".into();
+        }
+        if let Some(ref v) = initial_parameters {
+            if !v.is_object() {
+                return "Failed: initialParameters must be an object".into();
+            }
+        }
+        let mut p = json!({"templatePath": template_path, "newPath": new_path});
+        if let Some(v) = initial_parameters { p["initialParameters"] = json!(v); }
+        if let Some(v) = spawn_actor { p["spawnActor"] = json!(v); }
+        if let Some(v) = actor_name { p["actorName"] = json!(v); }
+        if let Some(v) = location { p["location"] = json!(v); }
+        if let Some(v) = rotation { p["rotation"] = json!(v); }
+        self.call("duplicate_niagara_system", p).await
+    }
+
+    #[tool(description = "Set a Niagara User Parameter on a spawned Niagara actor or a Niagara System asset.")]
+    async fn set_niagara_parameter(
+        &self,
+        #[tool(param)] #[schemars(description = "User parameter full name, e.g. User.Color")]
+        parameter_name: String,
+        #[tool(param)] #[schemars(description = "Parameter value (scalar, vector, or bool)")]
+        value: Value,
+        #[tool(param)] #[schemars(description = "Target Niagara actor name")]
+        actor_name: Option<String>,
+        #[tool(param)] #[schemars(description = "Target Niagara System asset path")]
+        system_path: Option<String>,
+        #[tool(param)] #[schemars(description = "Optional target Niagara component name")]
+        component_name: Option<String>,
+    ) -> String {
+        if parameter_name.is_empty() {
+            return "Failed: Missing required parameter: parameterName".into();
+        }
+        if actor_name.is_none() && system_path.is_none() {
+            return "Failed: Must provide actorName or systemPath".into();
+        }
+        let mut p = json!({"parameterName": parameter_name, "value": value});
+        if let Some(v) = actor_name { p["actorName"] = json!(v); }
+        if let Some(v) = system_path { p["systemPath"] = json!(v); }
+        if let Some(v) = component_name { p["componentName"] = json!(v); }
+        self.call("set_niagara_parameter", p).await
+    }
+
     // ── Mesh / Light / Effect ──
 
     #[tool(description = "Set the static mesh on a StaticMeshComponent")]

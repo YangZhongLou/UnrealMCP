@@ -95,6 +95,12 @@ FString HandleSetSkyLightParameters(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetTerrainLayerTexture(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetTerrainLayerMaterial(const TSharedPtr<FJsonObject>& Params);
 FString HandleGetTerrainLayerInfo(const TSharedPtr<FJsonObject>& Params);
+FString HandleGenerateAndImport3D(const TSharedPtr<FJsonObject>& Params);
+FString HandleGetGenerateAndImport3DStatus(const TSharedPtr<FJsonObject>& Params);
+FString HandleCreateMaterialFromTextures(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetTextureParameter(const TSharedPtr<FJsonObject>& Params);
+FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
+FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -287,7 +293,8 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
     FString Method = RequestObject->GetStringField(TEXT("method"));
     TSharedPtr<FJsonObject> Params = RequestObject->GetObjectField(TEXT("params"));
-    FString RequestId = RequestObject->GetStringField(TEXT("id"));
+    FString RequestId;
+    RequestObject->TryGetStringField(TEXT("id"), RequestId);
 
     FString ResultStr;
 
@@ -672,6 +679,30 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     {
         ResultStr = HandleGetTerrainLayerInfo(Params);
     }
+    else if (Method == TEXT("generate_and_import_3d"))
+    {
+        ResultStr = HandleGenerateAndImport3D(Params);
+    }
+    else if (Method == TEXT("get_generate_and_import_3d_status"))
+    {
+        ResultStr = HandleGetGenerateAndImport3DStatus(Params);
+    }
+    else if (Method == TEXT("create_material_from_textures"))
+    {
+        ResultStr = HandleCreateMaterialFromTextures(Params);
+    }
+    else if (Method == TEXT("set_texture_parameter"))
+    {
+        ResultStr = HandleSetTextureParameter(Params);
+    }
+    else if (Method == TEXT("duplicate_niagara_system"))
+    {
+        ResultStr = HandleDuplicateNiagaraSystem(Params);
+    }
+    else if (Method == TEXT("set_niagara_parameter"))
+    {
+        ResultStr = HandleSetNiagaraParameter(Params);
+    }
     else
     {
         TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
@@ -681,6 +712,52 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
 
         TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
         FJsonSerializer::Serialize(Response.ToSharedRef(), Writer);
+    }
+
+    // VFX methods currently return {success, result/error} without a JSON-RPC id.
+    // Wrap them here so the response always contains the request id.
+    const bool bIsVfxMethod =
+        Method == TEXT("generate_and_import_3d") ||
+        Method == TEXT("get_generate_and_import_3d_status") ||
+        Method == TEXT("create_material_from_textures") ||
+        Method == TEXT("set_texture_parameter") ||
+        Method == TEXT("duplicate_niagara_system") ||
+        Method == TEXT("set_niagara_parameter");
+
+    if (bIsVfxMethod && !ResultStr.IsEmpty())
+    {
+        TSharedPtr<FJsonObject> HandlerResponse;
+        TSharedRef<TJsonReader<>> ResponseReader = TJsonReaderFactory<>::Create(ResultStr);
+        if (FJsonSerializer::Deserialize(ResponseReader, HandlerResponse) && HandlerResponse.IsValid() && !HandlerResponse->HasField(TEXT("id")))
+        {
+            TSharedPtr<FJsonObject> Wrapped = MakeShareable(new FJsonObject);
+            Wrapped->SetStringField(TEXT("id"), RequestId);
+
+            bool bSuccess = false;
+            if (HandlerResponse->TryGetBoolField(TEXT("success"), bSuccess) && bSuccess)
+            {
+                Wrapped->SetBoolField(TEXT("success"), true);
+                TSharedPtr<FJsonObject> ResultObj;
+                if (HandlerResponse->TryGetObjectField(TEXT("result"), ResultObj))
+                {
+                    Wrapped->SetObjectField(TEXT("result"), ResultObj);
+                }
+            }
+            else
+            {
+                Wrapped->SetBoolField(TEXT("success"), false);
+                FString ErrorMsg;
+                if (!HandlerResponse->TryGetStringField(TEXT("error"), ErrorMsg))
+                {
+                    ErrorMsg = TEXT("Unknown error");
+                }
+                Wrapped->SetStringField(TEXT("error"), ErrorMsg);
+            }
+
+            ResultStr.Empty();
+            TSharedRef<TJsonWriter<>> ResponseWriter = TJsonWriterFactory<>::Create(&ResultStr);
+            FJsonSerializer::Serialize(Wrapped.ToSharedRef(), ResponseWriter);
+        }
     }
 
     return ResultStr;
