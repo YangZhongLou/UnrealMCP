@@ -967,7 +967,9 @@ namespace
 
         FNiagaraUserRedirectionParameterStore& Exposed = System->GetExposedParameters();
         const FNiagaraVariable* ExistingVar = nullptr;
-        for (const FNiagaraVariable& Var : Exposed.GetParameters())
+        TArray<FNiagaraVariable> Parameters;
+        Exposed.GetParameters(Parameters);
+        for (const FNiagaraVariable& Var : Parameters)
         {
             if (Var.GetName() == ParamName)
             {
@@ -1267,12 +1269,11 @@ FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params)
         return VfxBuildError(TEXT("Missing required parameter: value"));
     }
 
-    const TSharedPtr<FJsonValue>* ValuePtr = nullptr;
-    if (!Params->TryGetField(TEXT("value"), ValuePtr) || !ValuePtr || !ValuePtr->IsValid())
+    TSharedPtr<FJsonValue> Value = Params->TryGetField(TEXT("value"));
+    if (!Value.IsValid())
     {
         return VfxBuildError(TEXT("value must be a valid JSON value"));
     }
-    TSharedPtr<FJsonValue> Value = *ValuePtr;
 
     FString ActorName;
     const bool bHasActor = Params->TryGetStringField(TEXT("actorName"), ActorName) && !ActorName.IsEmpty();
