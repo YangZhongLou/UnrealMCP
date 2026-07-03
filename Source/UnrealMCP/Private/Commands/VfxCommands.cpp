@@ -118,7 +118,7 @@ static TSharedPtr<FJsonValueArray> VectorToJsonArray(const FVector& V)
 // ---------------------------------------------------------------------------
 // Helper: Actor lookup
 // ---------------------------------------------------------------------------
-static AActor* FindActorByName(UWorld* World, const FString& Name)
+static AActor* FindActorByName_Vfx(UWorld* World, const FString& Name)
 {
     if (!World)
     {
@@ -193,7 +193,7 @@ static bool ImportAndSpawnStaticMesh(
         UAssetImportTask* ImportTask = NewObject<UAssetImportTask>();
         ImportTask->Filename = MeshFile;
         ImportTask->DestinationPath = DestinationPath;
-        ImportTask->bAutomatedImportProcedure = true;
+        ImportTask->bAutomated = true;
         ImportTask->bAsync = false;
         ImportTask->bReplaceExisting = true;
         ImportTask->bSave = false;
@@ -820,7 +820,7 @@ FString HandleSetTextureParameter(const TSharedPtr<FJsonObject>& Params)
             return;
         }
 
-        AActor* Actor = FindActorByName(World, ActorName);
+        AActor* Actor = FindActorByName_Vfx(World, ActorName);
         if (!Actor)
         {
             ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName);
@@ -1315,7 +1315,7 @@ FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params)
                 return;
             }
 
-            AActor* Actor = FindActorByName(World, ActorName);
+            AActor* Actor = FindActorByName_Vfx(World, ActorName);
             if (!Actor)
             {
                 ErrorMsg = FString::Printf(TEXT("Actor not found: %s"), *ActorName);
