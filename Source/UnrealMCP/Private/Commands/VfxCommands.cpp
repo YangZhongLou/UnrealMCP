@@ -630,30 +630,35 @@ FString HandleCreateMaterialFromTextures(const TSharedPtr<FJsonObject>& Params)
         return VfxBuildError(TEXT("Missing required parameter: maps"));
     }
 
-    TSharedPtr<FJsonObject> MapsObj;
-    if (!Params->TryGetObjectField(TEXT("maps"), MapsObj) || !MapsObj.IsValid())
+    const TSharedPtr<FJsonObject>* MapsObjPtr = nullptr;
+    if (!Params->TryGetObjectField(TEXT("maps"), MapsObjPtr) || !MapsObjPtr || !MapsObjPtr->IsValid())
     {
         return VfxBuildError(TEXT("maps must be an object"));
     }
+    TSharedPtr<FJsonObject> MapsObj = *MapsObjPtr;
 
     const bool bReuse = Params->HasField(TEXT("reuse")) ? Params->GetBoolField(TEXT("reuse")) : true;
 
     TSharedPtr<FJsonObject> ScalarObj;
     if (Params->HasField(TEXT("scalarParameters")))
     {
-        if (!Params->TryGetObjectField(TEXT("scalarParameters"), ScalarObj) || !ScalarObj.IsValid())
+        const TSharedPtr<FJsonObject>* ScalarObjPtr = nullptr;
+        if (!Params->TryGetObjectField(TEXT("scalarParameters"), ScalarObjPtr) || !ScalarObjPtr || !ScalarObjPtr->IsValid())
         {
             return VfxBuildError(TEXT("scalarParameters must be an object"));
         }
+        ScalarObj = *ScalarObjPtr;
     }
 
     TSharedPtr<FJsonObject> VectorObj;
     if (Params->HasField(TEXT("vectorParameters")))
     {
-        if (!Params->TryGetObjectField(TEXT("vectorParameters"), VectorObj) || !VectorObj.IsValid())
+        const TSharedPtr<FJsonObject>* VectorObjPtr = nullptr;
+        if (!Params->TryGetObjectField(TEXT("vectorParameters"), VectorObjPtr) || !VectorObjPtr || !VectorObjPtr->IsValid())
         {
             return VfxBuildError(TEXT("vectorParameters must be an object"));
         }
+        VectorObj = *VectorObjPtr;
     }
 
     // Build a parameter file so we do not have to quote JSON through a shell.
@@ -1052,7 +1057,9 @@ namespace
         if (System)
         {
             FNiagaraUserRedirectionParameterStore& Exposed = System->GetExposedParameters();
-            for (const FNiagaraVariable& Var : Exposed.GetParameters())
+            TArray<FNiagaraVariable> Parameters;
+            Exposed.GetParameters(Parameters);
+            for (const FNiagaraVariable& Var : Parameters)
             {
                 if (Var.GetName() == ParamName)
                 {
@@ -1260,11 +1267,12 @@ FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params)
         return VfxBuildError(TEXT("Missing required parameter: value"));
     }
 
-    TSharedPtr<FJsonValue> Value;
-    if (!Params->TryGetField(TEXT("value"), Value) || !Value.IsValid())
+    const TSharedPtr<FJsonValue>* ValuePtr = nullptr;
+    if (!Params->TryGetField(TEXT("value"), ValuePtr) || !ValuePtr || !ValuePtr->IsValid())
     {
         return VfxBuildError(TEXT("value must be a valid JSON value"));
     }
+    TSharedPtr<FJsonValue> Value = *ValuePtr;
 
     FString ActorName;
     const bool bHasActor = Params->TryGetStringField(TEXT("actorName"), ActorName) && !ActorName.IsEmpty();

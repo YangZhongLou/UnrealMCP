@@ -737,10 +737,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
             if (HandlerResponse->TryGetBoolField(TEXT("success"), bSuccess) && bSuccess)
             {
                 Wrapped->SetBoolField(TEXT("success"), true);
-                TSharedPtr<FJsonObject> ResultObj;
-                if (HandlerResponse->TryGetObjectField(TEXT("result"), ResultObj))
+                const TSharedPtr<FJsonObject>* ResultObjPtr = nullptr;
+                if (HandlerResponse->TryGetObjectField(TEXT("result"), ResultObjPtr) && ResultObjPtr && ResultObjPtr->IsValid())
                 {
-                    Wrapped->SetObjectField(TEXT("result"), ResultObj);
+                    Wrapped->SetObjectField(TEXT("result"), *ResultObjPtr);
                 }
             }
             else
