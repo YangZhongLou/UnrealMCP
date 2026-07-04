@@ -14,6 +14,7 @@ import sys
 import time
 import traceback
 from datetime import datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,102 @@ app = FastAPI(title="UnrealMCP Audio Generation Service")
 _model_cache: dict[str, Any] = {}
 _model_errors: dict[str, str] = {}
 
+# ---------------------------------------------------------------------------
+# Error classification helpers
+# ---------------------------------------------------------------------------
+
+# Exception types that almost always mean a network or corrupted download.
+_DOWNLOAD_ERROR_TYPES = (
+    "IncompleteRead",
+    "ChunkedEncodingError",
+    "ConnectionError",
+    "ConnectTimeout",
+    "ReadTimeout",
+    "HTTPError",
+    "LocalEntryNotFoundError",
+    "EntryNotFoundError",
+    "RepositoryNotFoundError",
+    "RevisionNotFoundError",
+    "GatedRepoError",
+    "SafetensorError",
+    "PickleError",
+)
+
+# Substrings that identify common weight/download/checksum problems.
+_DOWNLOAD_ERROR_SUBSTRINGS = (
+    "incomplete read",
+    "checksum",
+    "sha256",
+    "md5",
+    "corrupt",
+    "corrupted",
+    "download",
+    "huggingface",
+    "hf.co",
+    "modelscope",
+    "timeout",
+    "connection",
+    "connect",
+    "ssl",
+    "certificate",
+    "gated",
+    "access",
+    "unauthorized",
+    "permission",
+    "not found",
+    "no such file",
+    "does not exist",
+    "cannot find",
+    "unable to find",
+    "missing",
+    "ckpt",
+    "checkpoint",
+    ".pth",
+    ".safetensors",
+    "state_dict",
+    "weights",
+    "repo",
+)
+
+
+def _classify_error(model_name: str, exc: BaseException) -> str:
+    """Return a concise, actionable classification string for a model failure."""
+    exc_type = type(exc).__name__
+    exc_msg = str(exc).lower()
+    tb = traceback.format_exc().lower()
+
+    is_download = exc_type in _DOWNLOAD_ERROR_TYPES or any(
+        s in exc_msg or s in tb for s in _DOWNLOAD_ERROR_SUBSTRINGS
+    )
+    is_import = exc_type in ("ModuleNotFoundError", "ImportError") or "no module named" in exc_msg
+
+    if is_import:
+        return "missing python package"
+    if is_download:
+        return "download/network or corrupted weights"
+    return "runtime error"
+
+
+def _model_action_hint(model_name: str, category: str) -> str:
+    """Return a short "what to do next" hint for the caller."""
+    if category == "missing python package":
+        return (
+            "Run the installer: "
+            "Plugins\\UnrealMCP\\scripts\\install-audio-tools.ps1"
+        )
+    return (
+        "Pre-download weights and verify checksums (see "
+        "Plugins/UnrealMCP/audio_server/MODEL_DOWNLOAD_GUIDE.md), then update "
+        "audio_server/config.yaml or audio_server/.env with local paths."
+    )
+
+
+def _format_model_error(model_name: str, exc: BaseException) -> str:
+    """Build a clear, actionable error message for HTTP responses and health."""
+    category = _classify_error(model_name, exc)
+    hint = _model_action_hint(model_name, category)
+    return f"{model_name}: {category} - {exc}. Next step: {hint}"
+
 
 def _now_str() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -181,6 +278,11 @@ def _load_ace_step() -> Any:
         ace_config = CONFIG["models"]["ace_step"]
         checkpoint = ace_config.get("checkpoint_path") or None
 
+        if checkpoint is not None and not Path(checkpoint).exists():
+            raise FileNotFoundError(
+                f"ACE-Step checkpoint path does not exist: {checkpoint}"
+            )
+
         # ACEStepPipeline takes an integer GPU id; it falls back to CPU if CUDA
         # is unavailable. Parse a device string like "cuda:0" or "cuda".
         if DEVICE.startswith("cuda"):
@@ -201,7 +303,7 @@ def _load_ace_step() -> Any:
         logger.info("ACE-Step pipeline created.")
         return pipeline
     except Exception as exc:  # noqa: BLE001
-        msg = f"ACE-Step failed to load: {exc}"
+        msg = _format_model_error("ace_step", exc)
         logger.error(msg)
         logger.debug(traceback.format_exc())
         raise RuntimeError(msg) from exc
@@ -262,6 +364,11 @@ def _load_stable_audio_open() -> Any:
         if not pretrained_name:
             raise ValueError("No pretrained_name configured for stable_audio_open")
 
+        if Path(pretrained_name).exists() and not (Path(pretrained_name) / "model_config.json").exists():
+            raise FileNotFoundError(
+                f"Stable Audio Open local path is missing model_config.json: {pretrained_name}"
+            )
+
         model, model_config = get_pretrained_model(pretrained_name)
         model.to(DEVICE).eval().requires_grad_(False)
 
@@ -275,7 +382,7 @@ def _load_stable_audio_open() -> Any:
             "sample_size": sample_size,
         }
     except Exception as exc:  # noqa: BLE001
-        msg = f"Stable Audio Open failed to load: {exc}"
+        msg = _format_model_error("stable_audio_open", exc)
         logger.error(msg)
         logger.debug(traceback.format_exc())
         raise RuntimeError(msg) from exc
@@ -356,6 +463,16 @@ def _load_mmaudio() -> Any:
 
         dtype = torch.float32 if DEVICE == "cpu" else torch.bfloat16
 
+        for required_key, required_path in (
+            ("model_path", model_cfg.model_path),
+            ("vae_path", model_cfg.vae_path),
+            ("synchformer_ckpt", model_cfg.synchformer_ckpt),
+        ):
+            if required_path and not Path(required_path).exists():
+                raise FileNotFoundError(
+                    f"MMAudio required file missing ({required_key}): {required_path}"
+                )
+
         net = get_my_mmaudio(model_cfg.model_name).to(DEVICE, dtype).eval()
         net.load_weights(
             torch.load(
@@ -383,7 +500,7 @@ def _load_mmaudio() -> Any:
             "model_name": model_name,
         }
     except Exception as exc:  # noqa: BLE001
-        msg = f"MMAudio failed to load: {exc}"
+        msg = _format_model_error("mmaudio", exc)
         logger.error(msg)
         logger.debug(traceback.format_exc())
         raise RuntimeError(msg) from exc
@@ -540,11 +657,27 @@ def _handle_generation(
             prompt=prompt,
             message=f"Generated {model_name} audio in {elapsed:.2f}s.",
         )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        # Likely a model-load failure surfaced by the lazy loader; message was
+        # already formatted by _format_model_error.
+        logger.error("%s generation failed: %s", model_name, exc)
+        logger.debug(traceback.format_exc())
+        _model_errors[model_name] = str(exc)
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.error("%s generation failed: %s", model_name, exc)
         logger.debug(traceback.format_exc())
         _model_errors[model_name] = str(exc)
-        raise HTTPException(status_code=500, detail=f"{model_name} generation failed: {exc}") from exc
+        detail = _format_model_error(model_name, exc)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=detail,
+        ) from exc
 
 
 @app.post("/generate/music", response_model=GenerationResponse)
