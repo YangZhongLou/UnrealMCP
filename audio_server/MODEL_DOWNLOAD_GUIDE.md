@@ -99,6 +99,8 @@ The installer clones the original [`ace-step/ACE-Step`](https://github.com/ace-s
 - a BigVGAN v2 44 kHz vocoder (`nvidia/bigvgan_v2_44khz_128band_512x`), downloaded automatically by the package
 - CLIP (`apple/DFN5B-CLIP-ViT-H-14-384` or the local variant), downloaded automatically by the package
 
+> **Note:** Even if you manually place the three MMAudio files above, the package will still auto-download **BigVGAN** and **CLIP** from HuggingFace on first load. These are large (~489 MB and ~3.9 GB respectively) and can be slow or hang on unstable networks. Pre-download the bundled ModelScope repo below to avoid this.
+
 ### Official HuggingFace / GitHub sources
 
 | Repo / Release | License | Gated |
@@ -126,12 +128,23 @@ The installer clones the original [`ace-step/ACE-Step`](https://github.com/ace-s
 
 > The `bigvgan_discriminator_optimizer.pt` (1.53 GB) is also in the repo but is **not required for inference**.
 
+### Required CLIP file for conditioning
+
+| File | Size | SHA-256 (LFS oid) | Purpose |
+|---|---|---|---|
+| `open_clip_pytorch_model.bin` / `pytorch_model.bin` | ~3.9 GB | — | Text/image conditioning for MMAudio |
+| `config.json` | < 10 KB | — | Model configuration |
+
+> The exact filename depends on the `open_clip` / `transformers` loader version (`open_clip_pytorch_model.bin` or `pytorch_model.bin`).
+
 ### Verified mirrors
 
 | Mirror | Repo ID / URL | Notes |
 |---|---|---|
 | **ModelScope (recommended)** | [`PineKing2024/MMAudio`](https://modelscope.cn/models/PineKing2024/MMAudio) | ✅ Contains MMAudio weights, VAE, Synchformer, BigVGAN generator, and Apple CLIP; ships a `checkfile.json` with MD5 checksums |
 | **ModelScope (safetensors)** | [`Kijai/MMAudio_safetensors`](https://modelscope.cn/models/Kijai/MMAudio_safetensors) | ComfyUI repack in `.safetensors`; useful only if you migrate the loader to safetensors |
+
+> **Avoid slow HF auto-downloads:** If BigVGAN or CLIP downloads from HuggingFace are unreliable, download the single ModelScope repo `PineKing2024/MMAudio` instead. It bundles all MMAudio dependencies (weights, VAE, Synchformer, BigVGAN generator, and CLIP) so the server can run fully offline after copying the folder into place.
 
 ---
 

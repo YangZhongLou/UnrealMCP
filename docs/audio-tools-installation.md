@@ -296,6 +296,9 @@ modelscope download --local-dir ./audio_weights/stable-audio-open-1.0 stabilitya
 modelscope download --local-dir ./audio_weights/MMAudio PineKing2024/MMAudio
 ```
 
+- **注意：** 即使 `mmaudio_*` 权重已经就位，第一次调用 `/generate/foley` 时仍会尝试从 HuggingFace 自动下载 CLIP（约 3.9 GB）和 BigVGAN（约 489 MB）。如果网络不稳定，这一步骤可能耗时很长或中断。
+- **推荐做法：** 使用 ModelScope 的 `PineKing2024/MMAudio` 一次性获取 MMAudio 全部依赖（weights + VAE + Synchformer + BigVGAN + CLIP），然后将该目录复制到目标环境，避免首次生成时在线下载。
+
 ### 9.3 使用 huggingface-cli 断点续传
 
 如果 HF 连接尚可但容易中断，可用官方 CLI 的 resume 功能配合较长超时：
