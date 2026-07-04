@@ -40,6 +40,60 @@ pip install -r requirements.txt
 
 Edit `config.yaml` (or set environment variables in `audio_server/.env`) to set model checkpoint paths, device, port, and output directory.
 
+## Pre-downloaded weights / offline migration
+
+If downloading weights from inside this environment is unreliable, pre-download them on a machine with better network access and copy them into the project with the import helper.
+
+### Expected source layout
+
+```text
+D:/AudioWeights/
+├── ACE-Step/
+│   └── checkpoints/
+│       ├── music_dcae_f8c8/
+│       ├── music_vocoder/
+│       ├── ace_step_transformer/
+│       └── umt5-base/
+├── stable-audio-open/
+│   └── models--stabilityai--stable-audio-open-1.0/   # HuggingFace hub snapshot
+└── MMAudio/
+    ├── weights/
+    │   └── mmaudio_large_44k_v2.pth
+    └── ext_weights/
+        ├── v1-44.pth
+        └── synchformer_state_dict.pth
+```
+
+### Import
+
+From the project root (`D:/Playground/TA-Playground`):
+
+```powershell
+.\Plugins\UnrealMCP\scripts\import-audio-weights.ps1 -SourceDir D:\AudioWeights -UpdateEnv
+```
+
+The script will:
+
+- Validate the source tree for each model and report missing files.
+- Copy ACE-Step checkpoints to `Plugins/UnrealMCP/third_party/ACE-Step/checkpoints/` and update `ACE_STEP_CHECKPOINT_PATH` in `audio_server/.env` (when `-UpdateEnv` is used).
+- Copy the Stable Audio Open HuggingFace cache snapshot to `%HF_HOME%\hub\models--stabilityai--stable-audio-open-1.0` (or `TRANSFORMERS_CACHE\hub\...`).
+- Copy MMAudio weights to both `third_party/MMAudio/` and `audio_server/` so the relative `./weights` and `./ext_weights` paths resolve when the server is launched from `audio_server/`.
+- Verify any `.md5` sidecar files and report checksum mismatches.
+
+Preview changes without touching anything:
+
+```powershell
+.\Plugins\UnrealMCP\scripts\import-audio-weights.ps1 -SourceDir D:\AudioWeights -WhatIf
+```
+
+Create directory junctions instead of copying (saves disk space, but requires the source to remain available):
+
+```powershell
+.\Plugins\UnrealMCP\scripts\import-audio-weights.ps1 -SourceDir D:\AudioWeights -Symlink -UpdateEnv
+```
+
+Skip individual models with `-SkipAceStep`, `-SkipStableAudio`, or `-SkipMMAudio`.
+
 ## Start the server
 
 ```powershell
