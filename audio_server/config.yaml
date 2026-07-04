@@ -1,0 +1,27 @@
+# UnrealMCP Audio Server configuration.
+# Values can be overridden with environment variables:
+#   AUDIO_SERVER_HOST, AUDIO_SERVER_PORT, AUDIO_SERVER_DEVICE, AUDIO_SERVER_OUTPUT_DIR
+
+host: 127.0.0.1
+port: 8123
+
+# Device used by PyTorch: "auto", "cuda", "cuda:0", "cpu", etc.
+device: auto
+
+# Root directory where generated WAV files are saved.
+# Subdirectories per model are created automatically (music/, sfx/, foley/).
+output_dir: ./output
+
+models:
+  ace_step:
+    # Leave empty to use ACE-Step's default checkpoint download location.
+    # Set an absolute path to load a local checkpoint.
+    checkpoint_path: ""
+
+  stable_audio_open:
+    # HuggingFace repo id or local path.
+    pretrained_name: stabilityai/stable-audio-open-1.0
+
+  mmaudio:
+    # Model variant used by MMAudio demos (e.g. large_44k_v2).
+    model_name: large_44k_v2

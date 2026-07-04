@@ -1,0 +1,32 @@
+# Server framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# Configuration / data handling
+pydantic>=2.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Audio I/O and numeric processing
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# PyTorch is assumed to be installed separately for the target CUDA version.
+# The model packages below should be installed per their official guides:
+#
+#   ACE-Step:
+#     pip install git+https://github.com/ace-step/ACE-Step.git
+#     # Windows GPU users may also need:
+#     # pip install triton-windows
+#
+#   Stable Audio Open:
+#     pip install git+https://github.com/Stability-AI/stable-audio-tools.git
+#
+#   MMAudio:
+#     pip install git+https://github.com/hkchengrex/MMAudio.git
+#
+# If you prefer to keep a single requirements file, uncomment the lines below
+# (install may take several minutes because these build from source):
+# ace-step @ git+https://github.com/ace-step/ACE-Step.git
+# stable-audio-tools @ git+https://github.com/Stability-AI/stable-audio-tools.git
+# mmaudio @ git+https://github.com/hkchengrex/MMAudio.git

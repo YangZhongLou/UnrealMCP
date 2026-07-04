@@ -9,3 +9,11 @@ Intermediate/
 ue_editor.log
 UnrealPlugin/
 .claude/
+
+# Generated/local environment
+.venv/
+third_party/
+__pycache__/
+
+# Downloaded binary tools (install script fetches FFmpeg if missing)
+tools/ffmpeg/
