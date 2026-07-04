@@ -15,5 +15,10 @@ UnrealPlugin/
 third_party/
 __pycache__/
 
+# Runtime configuration and downloaded model weights
+audio_server/.env
+weights/
+.whl-cache/
+
 # Downloaded binary tools (install script fetches FFmpeg if missing)
 tools/ffmpeg/

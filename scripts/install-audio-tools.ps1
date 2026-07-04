@@ -63,6 +63,10 @@ $AudioServer  = Join-Path $PluginRoot 'audio_server'
 $OutputDir    = Join-Path $AudioServer 'output'
 $VenvPath     = Join-Path $PluginRoot '.venv'
 
+# PyTorch wheel index. CUDA 12.6 is supported by drivers >= 560.94 and keeps
+# Stable Audio Open from pulling a CPU-only torch wheel.
+$CudaIndexUrl = 'https://download.pytorch.org/whl/cu126'
+
 $Repos = @(
     @{
         Name        = 'ACE-Step'
@@ -76,8 +80,8 @@ $Repos = @(
         Name        = 'Stable Audio Open'
         Url         = 'https://github.com/Stability-AI/stable-audio-tools.git'
         DirName     = 'stable-audio-tools'
-        InstallArgs = @('install', '-e', '.[train,ui]')
-        FallbackArgs = @('install', '-e', '.')
+        InstallArgs = @('install', '-e', '.[train,ui]', '--index-url', $CudaIndexUrl)
+        FallbackArgs = @('install', '-e', '.', '--index-url', $CudaIndexUrl)
         VerifyCmd   = 'python run_gradio.py --pretrained-name stabilityai/stable-audio-open-1.0'
         Notes       = 'SFX / ambient / short-loop generation.'
     },
@@ -287,9 +291,9 @@ Invoke-EnvPip @('install', '--upgrade', 'pip', 'setuptools', 'wheel') 'Upgrading
 Write-Header 'Installing PyTorch'
 
 if ($hasNvidia) {
-    Write-Info '  Attempting CUDA 12.4 wheel (compatible with most recent drivers).'
+    Write-Info "  Attempting CUDA 12.6 wheel ($CudaIndexUrl)."
     try {
-        Invoke-EnvPip @('install', 'torch', 'torchvision', 'torchaudio', '--index-url', 'https://download.pytorch.org/whl/cu124') 'Installing PyTorch with CUDA 12.4'
+        Invoke-EnvPip @('install', 'torch', 'torchvision', 'torchaudio', '--index-url', $CudaIndexUrl) 'Installing PyTorch with CUDA 12.6'
         Write-Ok '  PyTorch (CUDA) installed successfully.'
     } catch {
         Write-Warn "  CUDA install failed: $_"
@@ -369,6 +373,36 @@ if (-not $SkipRepoClone) {
     }
 } else {
     Write-Warn '  -SkipRepoClone specified; skipping repository clone/install.'
+}
+
+# ---------------------------------------------------------------------------
+# Guard against model packages downgrading PyTorch to a CPU-only build
+# ---------------------------------------------------------------------------
+Write-Header 'Verifying PyTorch CUDA build'
+
+if ($hasNvidia) {
+    $cudaOk = $false
+    try {
+        if ($envType -eq 'conda') {
+            $torchVer = (& conda run -n ai-audio --no-capture-output python -c "import torch; print(torch.__version__)") | Select-Object -Last 1
+            $cudaOk   = (& conda run -n ai-audio --no-capture-output python -c "import torch; print(torch.cuda.is_available())") | Select-Object -Last 1
+        } else {
+            $torchVer = (& "$VenvPath\Scripts\python.exe" -c "import torch; print(torch.__version__)")
+            $cudaOk   = (& "$VenvPath\Scripts\python.exe" -c "import torch; print(torch.cuda.is_available())")
+        }
+        Write-Info "  Current torch: $torchVer ; CUDA available: $cudaOk"
+    } catch {
+        Write-Warn "  Could not query torch state: $_"
+    }
+
+    if (-not ($cudaOk -eq 'True')) {
+        Write-Warn '  CUDA torch not active; force-reinstalling CUDA 12.6 wheels.'
+        Invoke-EnvPip @('install', '--force-reinstall', 'torch', 'torchvision', 'torchaudio', '--index-url', $CudaIndexUrl) 'Re-installing PyTorch CUDA 12.6 wheels'
+    } else {
+        Write-Ok '  CUDA torch is active.'
+    }
+} else {
+    Write-Warn '  No NVIDIA GPU; skipping CUDA verification.'
 }
 
 # ---------------------------------------------------------------------------

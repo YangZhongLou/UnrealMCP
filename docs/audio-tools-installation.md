@@ -38,18 +38,36 @@ nvidia-smi                # 确认 NVIDIA GPU 和驱动
 
 ## 2. Python 环境管理
 
-建议使用 `conda` 或 `venv` 为每个模型创建独立环境，避免依赖冲突。
+### 2.1 一键安装（推荐）
+
+项目提供 PowerShell 一键安装脚本，会自动完成：
+
+- 检测 Python 3.10、Git、FFmpeg、NVIDIA GPU
+- 创建 venv 或 conda 环境
+- 安装 CUDA 12.6 版 PyTorch
+- 克隆并安装 ACE-Step、Stable Audio Open、MMAudio
+- 生成 `audio_server/.env`
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Plugins\UnrealMCP\scripts\install-audio-tools.ps1
+```
+
+脚本会自动把 PyTorch 固定为 CUDA 12.6 版本，避免 Stable Audio Open 将其降级为 CPU 版本。
+
+### 2.2 手动环境
+
+如果你想手动管理环境：
 
 ```powershell
 # 创建基础环境
 conda create -n ai-audio python=3.10 -y
 conda activate ai-audio
 
-# 安装 PyTorch（带 CUDA）
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
+# 安装 PyTorch（带 CUDA 12.6，与当前驱动兼容）
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-> 根据你的 CUDA 版本调整 `pytorch-cuda=12.1` 为实际版本号。
+> 根据你的 NVIDIA 驱动支持的最高 CUDA 版本调整 index-url（560.94 驱动支持 CUDA 12.6）。
 
 ---
 
@@ -223,6 +241,8 @@ python demo.py --prompt "coffee shop ambiance" --duration 8
 | `CUDA out of memory` | 显存不足 | 开启 `--cpu_offload`、降低时长、使用量化模型 |
 | `flash-attn` 编译失败 | CUDA 版本不匹配 | 跳过 Flash Attention，或安装对应 CUDA 版本的 PyTorch |
 | HuggingFace 下载失败 | 未登录或未接受条款 | 运行 `huggingface-cli login`，在模型页面点击 Accept |
+| HuggingFace 下载慢/超时 | 网络到 `huggingface.co` 不稳定 | 设置镜像 `HF_ENDPOINT=https://hf-mirror.com`，安装 `hf_xet`，或增大 `HF_HUB_DOWNLOAD_TIMEOUT` |
+| PyTorch 变成 CPU 版本 | 模型包把 torch 降级 | 重新安装 CUDA 版：`pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
 | ACE-Step 首次启动慢 | 自动下载权重 | 等待完成，或手动下载放到 `~/.cache/ace-step/checkpoints` |
 | MMAudio 提示缺少权重 | 模型未自动下载 | 检查网络，手动下载后放入项目 checkpoints 目录 |
 | UE 导入 WAV 失败 | 格式不支持 | 确保是 16/24bit WAV，采样率 44.1kHz 或 48kHz |

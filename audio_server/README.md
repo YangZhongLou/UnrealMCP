@@ -19,6 +19,14 @@ Install the three model packages first by following the official guides referenc
 
 ## Setup
 
+The recommended way is to use the provided installer, which creates a venv, installs PyTorch with CUDA, clones the three model repositories, and writes `audio_server/.env`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Plugins\UnrealMCP\scripts\install-audio-tools.ps1
+```
+
+If you prefer a manual setup:
+
 ```powershell
 # Optional: create a dedicated virtual environment
 python -m venv venv
@@ -30,7 +38,7 @@ pip install -r requirements.txt
 # Install model packages (see requirements.txt comments for exact commands)
 ```
 
-Edit `config.yaml` to set model checkpoint paths, device, port, and output directory.
+Edit `config.yaml` (or set environment variables in `audio_server/.env`) to set model checkpoint paths, device, port, and output directory.
 
 ## Start the server
 
@@ -91,4 +99,8 @@ Generated files are saved as 16-bit PCM WAV files under `audio_server/output/<mo
 ## Notes
 
 - Models are loaded lazily on the first request to keep startup fast.
-- The exact function names inside the model wrappers are marked with `TODO` comments; verify them against the installed versions of ACE-Step, stable-audio-tools, and MMAudio.
+- First request for each model downloads weights from HuggingFace / the model's own CDN. If your connection to HuggingFace is slow or unstable:
+  - Set a mirror before starting the server: `$env:HF_ENDPOINT = 'https://hf-mirror.com'`
+  - Install `hf_xet` for faster transfers: `pip install hf_xet`
+  - Increase timeout: `$env:HF_HUB_DOWNLOAD_TIMEOUT = '300'`
+- Stable Audio Open requires a HuggingFace account and accepting the model terms.
