@@ -23,5 +23,6 @@ models:
     pretrained_name: stabilityai/stable-audio-open-1.0
 
   mmaudio:
-    # Model variant used by MMAudio demos (e.g. large_44k_v2).
-    model_name: large_44k_v2
+    # Model variant used by MMAudio demos. Use medium_44k because that is the
+    # weight file already downloaded locally (weights/mmaudio_medium_44k.pth).
+    model_name: medium_44k
