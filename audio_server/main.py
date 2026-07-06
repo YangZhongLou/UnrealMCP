@@ -118,6 +118,13 @@ DEVICE = CONFIG["device"]
 if DEVICE == "auto":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Default local weight cache (project-root/weights). Override with MMAUDIO_WEIGHTS_DIR.
+_MMAUDIO_WEIGHTS_DIR = Path(
+    os.getenv("MMAUDIO_WEIGHTS_DIR", Path(__file__).resolve().parents[3] / "weights")
+)
+_CLIP_WEIGHT_PATH = _MMAUDIO_WEIGHTS_DIR / "open_clip_pytorch_model.bin"
+_BIGVGAN_WEIGHT_DIR = _MMAUDIO_WEIGHTS_DIR / "nvidia_bigvgan_v2_44khz_128band_512x"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -446,6 +453,14 @@ def _load_mmaudio() -> Any:
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+
+        # Point MMAudio at pre-downloaded CLIP/BigVGAN weights if they exist.
+        if _CLIP_WEIGHT_PATH.is_file():
+            os.environ.setdefault("MMAUDIO_CLIP_PATH", str(_CLIP_WEIGHT_PATH))
+            logger.info("Using local CLIP weights: %s", _CLIP_WEIGHT_PATH)
+        if _BIGVGAN_WEIGHT_DIR.is_dir():
+            os.environ.setdefault("BIGVGAN_LOCAL_DIR", str(_BIGVGAN_WEIGHT_DIR))
+            logger.info("Using local BigVGAN weights: %s", _BIGVGAN_WEIGHT_DIR)
 
         from mmaudio.eval_utils import all_model_cfg  # type: ignore
         from mmaudio.model.networks import get_my_mmaudio  # type: ignore
