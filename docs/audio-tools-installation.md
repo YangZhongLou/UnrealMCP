@@ -174,11 +174,24 @@ pip install -r requirements.txt
 
 ### 5.2 下载模型权重
 
-首次运行 demo 时会自动下载权重。也可以手动下载到项目目录：
+项目当前默认使用 **MMAudio `medium_44k`**（对应文件 `weights/mmaudio_medium_44k.pth`，约 2.4 GB）。需要准备：
 
-```powershell
-python demo.py --prompt "coffee shop ambiance" --duration 8
+```text
+weights/
+├── mmaudio_medium_44k.pth          # 主网络权重
+├── open_clip_pytorch_model.bin     # CLIP 文本/图像条件模型（约 3.9 GB）
+└── nvidia_bigvgan_v2_44khz_128band_512x/
+    ├── config.json
+    └── bigvgan_generator.pt        # BigVGAN 声码器（约 466 MB）
+
+audio_server/ext_weights/
+├── v1-44.pth                       # 44.1 kHz VAE（约 1.2 GB）
+└── synchformer_state_dict.pth      # 视觉同步编码器（约 950 MB）
 ```
+
+> `weights/` 指项目根目录 `D:/Playground/TA-Playground/weights/`；`audio_server/ext_weights/` 指 `Plugins/UnrealMCP/audio_server/ext_weights/`。`audio_server` 在启动时也会在工作目录下查找 `./weights` 和 `./ext_weights`，因此这两个位置可以互换使用。
+
+**首次调用 `/generate/foley` 时**，如果 `weights/open_clip_pytorch_model.bin` 和 `weights/nvidia_bigvgan_v2_44khz_128band_512x/` 不存在，MMAudio 会尝试从 HuggingFace 下载 CLIP 和 BigVGAN。网络不稳定时，建议先使用下方「慢网络 / 离线环境下载 weights」中的断点续传脚本或 ModelScope 预下载。
 
 ### 5.3 硬件要求
 
@@ -292,12 +305,12 @@ modelscope download --local-dir ./audio_weights/ACE-Step-v1-3.5B ACE-Step/ACE-St
 # https://huggingface.co/stabilityai/stable-audio-open-1.0
 modelscope download --local-dir ./audio_weights/stable-audio-open-1.0 stabilityai/stable-audio-open-1.0
 
-# MMAudio large_44k_v2 完整包（含 BigVGAN / CLIP，约 7.5 GB）
+# MMAudio medium_44k / large_44k_v2 完整包（含 BigVGAN / CLIP，约 7.5 GB）
 modelscope download --local-dir ./audio_weights/MMAudio PineKing2024/MMAudio
 ```
 
 - **注意：** 即使 `mmaudio_*` 权重已经就位，第一次调用 `/generate/foley` 时仍会尝试从 HuggingFace 自动下载 CLIP（约 3.9 GB）和 BigVGAN（约 489 MB）。如果网络不稳定，这一步骤可能耗时很长或中断。
-- **推荐做法：** 使用 ModelScope 的 `PineKing2024/MMAudio` 一次性获取 MMAudio 全部依赖（weights + VAE + Synchformer + BigVGAN + CLIP），然后将该目录复制到目标环境，避免首次生成时在线下载。
+- **推荐做法：** 使用 ModelScope 的 `PineKing2024/MMAudio` 一次性获取 MMAudio 全部依赖（weights + VAE + Synchformer + BigVGAN + CLIP），然后将该目录复制到目标环境，避免首次生成时在线下载。项目代码也会自动检测 `weights/open_clip_pytorch_model.bin` 和 `weights/nvidia_bigvgan_v2_44khz_128band_512x/`，并优先使用本地文件。
 
 ### 9.3 使用 huggingface-cli 断点续传
 
@@ -327,7 +340,34 @@ huggingface-cli download nvidia/bigvgan_v2_44khz_128band_512x --local-dir ./audi
 
    该脚本会把 weights 复制/链接到 `Plugins/UnrealMCP/third_party/` 与 `audio_server/` 期望的位置，并可选更新 `audio_server/.env` 中的 `ACE_STEP_CHECKPOINT_PATH`。
 
-### 9.5 指向本地 checkpoint 的 config.yaml 示例
+### 9.5 使用项目自带断点续传脚本下载 CLIP / BigVGAN
+
+如果 HuggingFace 可以连接但速度很慢、容易中断，可直接使用项目提供的 Python 续传脚本（位于 `weights/`）：
+
+```powershell
+# 使用 venv 中的 Python 运行
+$python = "D:\Playground\TA-Playground\Plugins\UnrealMCP\.venv\Scripts\python.exe"
+
+# 下载 CLIP（约 3.9 GB，自动断点续传、50 次重试）
+& $python D:\Playground\TA-Playground\weights\_download_clip.py
+
+# 下载 BigVGAN config + generator（约 466 MB，自动断点续传）
+& $python D:\Playground\TA-Playground\weights\_download_bigvgan.py
+
+# 查看下载进度
+& $python D:\Playground\TA-Playground\weights\_download_progress.py
+```
+
+脚本特性：
+
+- 使用 HTTP `Range` 头断点续传。
+- 遇到连接中断自动重试，最多 50 次，指数退避。
+- 下载目标固定为项目根目录 `weights/`，audio server 启动时会自动识别。
+- 进度脚本会显示当前大小、总大小、完成百分比和最近日志尾部。
+
+> 这些脚本不提交到仓库（`weights/` 在 `.gitignore` 中），只保留在本地使用。
+
+### 9.6 指向本地 checkpoint 的 config.yaml 示例
 
 编辑 `Plugins/UnrealMCP/audio_server/config.yaml`，用绝对路径替换 HF repo ID：
 
@@ -338,7 +378,8 @@ models:
   stable_audio_open:
     pretrained_name: "D:/AudioWeights/stable-audio-open-1.0"
   mmaudio:
-    model_name: "large_44k_v2"
+    # 本地已下载的权重是 medium_44k；如使用 large_44k_v2 请确保对应 .pth 存在
+    model_name: "medium_44k"
 ```
 
 > MMAudio 的 `weights/` 与 `ext_weights/` 会优先从当前工作目录或 `third_party/MMAudio/` 下查找。如果 `main.py` 启动后仍提示缺少权重，把 MMAudio 相关文件放到 `Plugins/UnrealMCP/third_party/MMAudio/weights/` 与 `ext_weights/` 下，具体布局见 `MODEL_DOWNLOAD_GUIDE.md`。

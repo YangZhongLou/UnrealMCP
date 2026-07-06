@@ -10,10 +10,12 @@ This guide lists reliable ways to obtain the weights for the three models used b
 
 ## TL;DR
 
+- The project currently defaults to **MMAudio `medium_44k`** because the matching weight file (`mmaudio_medium_44k.pth`, ~2.4 GB) was verified locally. You can switch to `large_44k_v2` if you download the corresponding `.pth`.
 - The `HF_ENDPOINT=https://hf-mirror.com` setting currently redirects most requests back to `huggingface.co` and does **not** cache these specific repos.
 - **ModelScope (modelscope.cn)** is the fastest verified public mirror for all three models from mainland China / unstable HF networks.
 - For Stable Audio Open, the HF repo is **gated**: you must accept the license on HuggingFace before downloading, even from a mirror.
 - Recommended workflow: pre-download on a machine with a stable HF/ModelScope connection, verify checksums, then copy the folders into the target environment and point `config.yaml`/`.env` at them.
+- For slow-but-working HF connections, use the resume-download scripts in `weights/_download_clip.py` and `weights/_download_bigvgan.py`.
 
 ---
 
@@ -91,15 +93,15 @@ The installer clones the original [`ace-step/ACE-Step`](https://github.com/ace-s
 
 ### What the project expects
 
-`main.py` loads `model_name: large_44k_v2`. MMAudio needs:
+`main.py` currently loads `model_name: medium_44k` by default. MMAudio needs:
 
-- a flow-prediction network (`weights/mmaudio_large_44k_v2.pth`)
+- a flow-prediction network (`weights/mmaudio_medium_44k.pth` or `weights/mmaudio_large_44k_v2.pth` if you switch to `large_44k_v2`)
 - a 44.1 kHz VAE (`ext_weights/v1-44.pth`)
 - a Synchformer visual encoder (`ext_weights/synchformer_state_dict.pth`)
-- a BigVGAN v2 44 kHz vocoder (`nvidia/bigvgan_v2_44khz_128band_512x`), downloaded automatically by the package
-- CLIP (`apple/DFN5B-CLIP-ViT-H-14-384` or the local variant), downloaded automatically by the package
+- a BigVGAN v2 44 kHz vocoder (`nvidia/bigvgan_v2_44khz_128band_512x`), normally downloaded automatically by the package
+- CLIP (`apple/DFN5B-CLIP-ViT-H-14-384`), normally downloaded automatically by the package
 
-> **Note:** Even if you manually place the three MMAudio files above, the package will still auto-download **BigVGAN** and **CLIP** from HuggingFace on first load. These are large (~489 MB and ~3.9 GB respectively) and can be slow or hang on unstable networks. Pre-download the bundled ModelScope repo below to avoid this.
+> **Note:** Even if you manually place the three MMAudio files above, the package will still auto-download **BigVGAN** and **CLIP** from HuggingFace on first load. These are large (~489 MB and ~3.9 GB respectively) and can be slow or hang on unstable networks. To avoid this, either pre-download the bundled ModelScope repo below **or** place the individual files in the project-root `weights/` folder and the server will use them automatically.
 
 ### Official HuggingFace / GitHub sources
 
@@ -108,6 +110,14 @@ The installer clones the original [`ace-step/ACE-Step`](https://github.com/ace-s
 | [`hkchengrex/MMAudio`](https://huggingface.co/hkchengrex/MMAudio) | CC BY-NC 4.0 | No |
 | [`nvidia/bigvgan_v2_44khz_128band_512x`](https://huggingface.co/nvidia/bigvgan_v2_44khz_128band_512x) | MIT | No |
 | MMAudio ext_weights on [GitHub Releases v0.1](https://github.com/hkchengrex/MMAudio/releases/tag/v0.1) | — | No |
+
+### Required MMAudio files for `medium_44k` (current default)
+
+| File | Size | MD5 (official) | SHA-256 (LFS oid) | Purpose |
+|---|---|---|---|---|
+| `weights/mmaudio_medium_44k.pth` | 2.4 GB | `5a56b6665e45a1e65ada534defa903d0` | — | Main flow-prediction network |
+| `ext_weights/v1-44.pth` | 1.22 GB | `fab020275fa44c6589820ce025191600` | — | 44.1 kHz VAE |
+| `ext_weights/synchformer_state_dict.pth` | 950 MB | `5b2f5594b0730f70e41e549b7c94390c` | — | Visual sync encoder |
 
 ### Required MMAudio files for `large_44k_v2`
 
@@ -235,6 +245,41 @@ Plugins/UnrealMCP/third_party/MMAudio/
 
 Or set the working directory to your weight folder before launching `main.py`.
 
+### 4.5 Avoid BigVGAN / CLIP auto-downloads at runtime
+
+The audio server has been patched to prefer pre-downloaded CLIP and BigVGAN weights. If the following files exist, it will use them instead of calling HuggingFace:
+
+```text
+D:/Playground/TA-Playground/weights/
+├── open_clip_pytorch_model.bin                 # CLIP
+└── nvidia_bigvgan_v2_44khz_128band_512x/
+    ├── config.json
+    └── bigvgan_generator.pt                    # BigVGAN
+```
+
+This works by setting two environment variables before MMAudio loads:
+
+- `MMAUDIO_CLIP_PATH` → path to `open_clip_pytorch_model.bin`
+- `BIGVGAN_LOCAL_DIR` → path to `nvidia_bigvgan_v2_44khz_128band_512x/`
+
+`main.py` sets these automatically when the files are found. You can also set them manually in `audio_server/.env`:
+
+```powershell
+MMAUDIO_CLIP_PATH=D:/Playground/TA-Playground/weights/open_clip_pytorch_model.bin
+BIGVGAN_LOCAL_DIR=D:/Playground/TA-Playground/weights/nvidia_bigvgan_v2_44khz_128band_512x
+```
+
+If you cannot use ModelScope but HuggingFace is slow-yet-reachable, use the resume-download scripts in `weights/`:
+
+```powershell
+# From the project root
+Plugins\UnrealMCP\.venv\Scripts\python.exe weights\_download_clip.py
+Plugins\UnrealMCP\.venv\Scripts\python.exe weights\_download_bigvgan.py
+Plugins\UnrealMCP\.venv\Scripts\python.exe weights\_download_progress.py
+```
+
+The scripts support HTTP Range resume, 50 retries with exponential backoff, and write logs next to the target files.
+
 ---
 
 ## 5. Why `HF_ENDPOINT=https://hf-mirror.com` did not help
@@ -249,8 +294,9 @@ Or set the working directory to your weight folder before launching `main.py`.
 |---|---|---|
 | ACE-Step v1-3.5B | Full repo | ~8.3 GB |
 | Stable Audio Open 1.0 | Full repo (gated) | ~10.8 GB |
-| MMAudio (`large_44k_v2`) | weights + ext_weights + BigVGAN | ~6.5 GB |
-| **Total** | | **~25–26 GB** |
+| MMAudio (`medium_44k`) | weights + ext_weights + BigVGAN + CLIP | ~8.8 GB |
+| MMAudio (`large_44k_v2`) | weights + ext_weights + BigVGAN + CLIP | ~10.8 GB |
+| **Total** | | **~27–31 GB** |
 
 ---
 

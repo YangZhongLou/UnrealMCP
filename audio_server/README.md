@@ -44,6 +44,8 @@ Edit `config.yaml` (or set environment variables in `audio_server/.env`) to set 
 
 If downloading weights from inside this environment is unreliable, pre-download them on a machine with better network access and copy them into the project with the import helper.
 
+The current default MMAudio variant is **`medium_44k`**. For a fully offline `/generate/foley` call you also need the CLIP and BigVGAN files that MMAudio normally downloads from HuggingFace at runtime.
+
 ### Expected source layout
 
 ```text
@@ -58,10 +60,15 @@ D:/AudioWeights/
 │   └── models--stabilityai--stable-audio-open-1.0/   # HuggingFace hub snapshot
 └── MMAudio/
     ├── weights/
-    │   └── mmaudio_large_44k_v2.pth
-    └── ext_weights/
-        ├── v1-44.pth
-        └── synchformer_state_dict.pth
+    │   ├── mmaudio_medium_44k.pth        # or mmaudio_large_44k_v2.pth
+    │   └── open_clip_pytorch_model.bin   # CLIP, auto-detected by main.py
+    ├── ext_weights/
+    │   ├── v1-44.pth
+    │   ├── synchformer_state_dict.pth
+    │   └── nvidia/bigvgan_v2_44khz_128band_512x/
+    │       ├── config.json
+    │       └── bigvgan_generator.pt      # BigVGAN, auto-detected by main.py
+    └── ...
 ```
 
 ### Import
@@ -153,8 +160,7 @@ Generated files are saved as 16-bit PCM WAV files under `audio_server/output/<mo
 ## Notes
 
 - Models are loaded lazily on the first request to keep startup fast.
-- First request for each model downloads weights from HuggingFace / the model's own CDN. If your connection to HuggingFace is slow or unstable:
-  - Set a mirror before starting the server: `$env:HF_ENDPOINT = 'https://hf-mirror.com'`
-  - Install `hf_xet` for faster transfers: `pip install hf_xet`
-  - Increase timeout: `$env:HF_HUB_DOWNLOAD_TIMEOUT = '300'`
+- First request for each model downloads weights from HuggingFace / the model's own CDN **unless** local weights are detected.
+- For MMAudio, place `open_clip_pytorch_model.bin` and the `nvidia_bigvgan_v2_44khz_128band_512x/` folder under the project-root `weights/` directory. `main.py` will set `MMAUDIO_CLIP_PATH` and `BIGVGAN_LOCAL_DIR` automatically and skip the HuggingFace download.
+- If your connection to HuggingFace is slow but usable, use the resume-download scripts in `weights/_download_clip.py` and `weights/_download_bigvgan.py`.
 - Stable Audio Open requires a HuggingFace account and accepting the model terms.
