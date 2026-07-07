@@ -12,7 +12,7 @@ A local FastAPI service that wraps three open-source audio generation models so 
 
 - Python 3.10
 - Git and Git LFS
-- FFmpeg
+- FFmpeg (Windows: BtbN **shared** build; `avcodec-*.dll`, `avformat-*.dll`, `avutil-*.dll` must be on `PATH`)
 - CUDA 11.8+ (optional but strongly recommended)
 
 Install the three model packages first by following the official guides referenced in `../docs/audio-tools-installation.md`.
@@ -164,3 +164,14 @@ Generated files are saved as 16-bit PCM WAV files under `audio_server/output/<mo
 - For MMAudio, place `open_clip_pytorch_model.bin` and the `nvidia_bigvgan_v2_44khz_128band_512x/` folder under the project-root `weights/` directory. `main.py` will set `MMAUDIO_CLIP_PATH` and `BIGVGAN_LOCAL_DIR` automatically and skip the HuggingFace download.
 - If your connection to HuggingFace is slow but usable, use the resume-download scripts in `weights/_download_clip.py` and `weights/_download_bigvgan.py`.
 - Stable Audio Open requires a HuggingFace account and accepting the model terms.
+
+## Windows notes / known issues
+
+1. **FFmpeg must be the shared BtbN Windows build.** Static `ffmpeg.exe` is not enough because `torchcodec` loads `avcodec-*.dll`, `avformat-*.dll`, `avutil-*.dll` at runtime. Download `ffmpeg-master-latest-win64-gpl-shared.zip` from [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip), extract so `tools/ffmpeg/bin/` contains the DLLs, and start the server with that directory on `PATH`. Missing FFmpeg manifests as errors about `libtorchcodec_core*.dll` / FFmpeg not found when calling `/generate/music`.
+
+2. **ACE-Step needs local patches on Windows** with `accelerate` 1.6 + `transformers` 4.50:
+   - Pass `low_cpu_mem_usage=False` to `from_pretrained` in `acestep/pipeline_ace_step.py` (transformer + text encoder) and `acestep/music_dcae/music_dcae_pipeline.py` (DCAE + vocoder). Without this, loading raises `Cannot copy out of meta tensor; no data!`.
+   - Replace `torchaudio.save(..., backend="soundfile")` with `soundfile.write` in `save_wav_file`, because recent `torchaudio` ignores the backend arg and routes through `torchcodec` (see the FFmpeg note above).
+   - Patch file: `Plugins/UnrealMCP/scripts/patches/ace-step-low-cpu-mem-and-soundfile.patch`.
+
+3. **Verified generation times on this hardware:** 30 s music ≈ 14 s; 180 s (3-minute) music ≈ 143 s.
