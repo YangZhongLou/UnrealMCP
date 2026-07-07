@@ -299,6 +299,11 @@ def _load_ace_step() -> Any:
             device_id = 0
             dtype = "float32"
 
+        # NOTE: ACE-Step's pipeline_ace_step.py and music_dcae_pipeline.py are
+        # patched in third_party/ACE-Step to pass low_cpu_mem_usage=False during
+        # from_pretrained calls and to use soundfile for WAV output. These
+        # changes avoid the "Cannot copy out of meta tensor" load error and the
+        # torchaudio/torchcodec FFmpeg dependency on Windows.
         pipeline = ACEStepPipeline(
             checkpoint_dir=checkpoint,
             device_id=device_id,

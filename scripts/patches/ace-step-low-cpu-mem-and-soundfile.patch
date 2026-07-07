@@ -1,0 +1,81 @@
+diff --git a/acestep/music_dcae/music_dcae_pipeline.py b/acestep/music_dcae/music_dcae_pipeline.py
+index 8112638..a3ec023 100644
+--- a/acestep/music_dcae/music_dcae_pipeline.py
++++ b/acestep/music_dcae/music_dcae_pipeline.py
+@@ -37,8 +37,14 @@ class MusicDCAE(ModelMixin, ConfigMixin, FromOriginalModelMixin):
+     ):
+         super(MusicDCAE, self).__init__()
+ 
+-        self.dcae = AutoencoderDC.from_pretrained(dcae_checkpoint_path)
+-        self.vocoder = ADaMoSHiFiGANV1.from_pretrained(vocoder_checkpoint_path)
++        # low_cpu_mem_usage=False avoids meta-tensor copy errors when the pipeline
++        # later moves these models to the target device.
++        self.dcae = AutoencoderDC.from_pretrained(
++            dcae_checkpoint_path, low_cpu_mem_usage=False
++        )
++        self.vocoder = ADaMoSHiFiGANV1.from_pretrained(
++            vocoder_checkpoint_path, low_cpu_mem_usage=False
++        )
+ 
+         if source_sample_rate is None:
+             source_sample_rate = 48000
+diff --git a/acestep/pipeline_ace_step.py b/acestep/pipeline_ace_step.py
+index a734d1a..fdbaa49 100644
+--- a/acestep/pipeline_ace_step.py
++++ b/acestep/pipeline_ace_step.py
+@@ -47,6 +47,8 @@ from acestep.apg_guidance import (
+     cfg_double_condition_forward,
+ )
+ import torchaudio
++import soundfile as sf
++import numpy as np
+ from .cpu_offload import cpu_offload
+ 
+ 
+@@ -186,8 +188,10 @@ class ACEStepPipeline:
+         ace_step_checkpoint_path = os.path.join(checkpoint_dir, "ace_step_transformer")
+         text_encoder_checkpoint_path = os.path.join(checkpoint_dir, "umt5-base")
+ 
++        # low_cpu_mem_usage=False prevents accelerate from creating meta tensors
++        # that cannot be moved with .to(device) on this model / torch version.
+         self.ace_step_transformer = ACEStepTransformer2DModel.from_pretrained(
+-            ace_step_checkpoint_path, torch_dtype=self.dtype
++            ace_step_checkpoint_path, torch_dtype=self.dtype, low_cpu_mem_usage=False
+         )
+         # self.ace_step_transformer.to(self.device).eval().to(self.dtype)
+         if self.cpu_offload:
+@@ -219,7 +223,7 @@ class ACEStepPipeline:
+         self.lyric_tokenizer = VoiceBpeTokenizer()
+ 
+         text_encoder_model = UMT5EncoderModel.from_pretrained(
+-            text_encoder_checkpoint_path, torch_dtype=self.dtype
++            text_encoder_checkpoint_path, torch_dtype=self.dtype, low_cpu_mem_usage=False
+         ).eval()
+         # text_encoder_model = text_encoder_model.to(self.device).to(self.dtype)
+         if self.cpu_offload:
+@@ -1406,13 +1410,18 @@ class ACEStepPipeline:
+                 output_path_wav = save_path
+ 
+         target_wav = target_wav.float()
+-        backend = "soundfile"
+-        if format == "ogg":
+-            backend = "sox"
+-        logger.info(f"Saving audio to {output_path_wav} using backend {backend}")
+-        torchaudio.save(
+-            output_path_wav, target_wav, sample_rate=sample_rate, format=format, backend=backend
+-        )
++        logger.info(f"Saving audio to {output_path_wav}")
++        # Use soundfile directly for WAV to avoid the torchaudio/torchcodec FFmpeg
++        # dependency on Windows. soundfile is already a project dependency.
++        if format == "wav":
++            wav_np = target_wav.cpu().numpy()
++            if wav_np.ndim == 1:
++                wav_np = wav_np[np.newaxis, :]
++            sf.write(output_path_wav, wav_np.T, sample_rate, subtype="PCM_16", format="WAV")
++        else:
++            torchaudio.save(
++                output_path_wav, target_wav, sample_rate=sample_rate, format=format
++            )
+         return output_path_wav
+ 
+     @cpu_offload("music_dcae")
