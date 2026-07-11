@@ -450,7 +450,9 @@ FString HandleSetRuntimeCameraTransform(const TSharedPtr<FJsonObject>& Params)
                 PinnedCamera = World->SpawnActor<ACameraActor>(SpawnParams);
                 if (PinnedCamera)
                 {
+#if WITH_EDITOR
                     PinnedCamera->SetActorLabel(TEXT("MCP_PIE_Camera"));
+#endif
                 }
             }
             if (PinnedCamera)

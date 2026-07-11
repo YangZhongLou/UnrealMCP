@@ -18,6 +18,10 @@
 		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
+		},
+		{
+			"Name": "Hexagon",
+			"Enabled": true
 		}
 	],
 	"Modules": [
