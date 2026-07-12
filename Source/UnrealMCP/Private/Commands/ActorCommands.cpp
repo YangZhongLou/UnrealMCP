@@ -1,4 +1,4 @@
-﻿#if WITH_EDITOR
+#if WITH_EDITOR
 #include "CoreMinimal.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
