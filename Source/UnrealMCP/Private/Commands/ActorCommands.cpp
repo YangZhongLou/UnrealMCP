@@ -12,6 +12,7 @@
 #include "LevelEditorSubsystem.h"
 #include "Dom/JsonObject.h"
 #include "Async/Async.h"
+#include "Misc/App.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "RenderingThread.h"
@@ -362,6 +363,10 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
             DoneEvent->Trigger();
             return;
         }
+
+        // UE 5.8: socket→GT AsyncTask may lack FAppTime TLS; re-seed so FlushRenderingCommands
+        // / world teardown RT work inherits a valid time context (same class as screenshot Ensure).
+        FApp::SetCurrentTime(FApp::GetCurrentTime());
 
         // End PIE before editor map load. Leaving PlayWorld alive while LoadLevel tears
         // down the editor world races the render thread into FAppTime without inherited

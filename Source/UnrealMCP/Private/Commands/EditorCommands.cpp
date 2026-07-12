@@ -75,6 +75,8 @@
 
 #include "Async/Async.h"
 
+#include "Misc/App.h"
+
 #include "Misc/PackageName.h"
 
 #include "HAL/FileManager.h"
@@ -505,6 +507,13 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
+        // UE 5.8: socket-thread → GameThread AsyncTask often arrives with empty FAppTime
+        // TLS. CaptureInheritedContext then enqueues RT work without a time context, and
+        // Renderer (e.g. UpdateReflectionSceneData → FApp::GetCurrentTime) Ensures.
+        // Re-seed TLS from the GT authority so subsequent ENQUEUE_RENDER_COMMAND forks
+        // a valid AppTime for the render thread.
+        FApp::SetCurrentTime(FApp::GetCurrentTime());
+
         bool bIsPIE = GEditor && GEditor->IsPlaySessionInProgress();
 
         // Resolve the active viewport. In PIE prefer the PIE world context's viewport;
@@ -535,18 +544,13 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
         // target only captures the 3D scene, which is why automation screenshots were
         // missing the in-game UI.
         //
-        // We only *queue* the request here; waiting for the file is done on the calling
-        // thread. FScreenshotRequest processes its queue on the game thread during the
-        // next engine tick, so blocking the game thread to wait for the file deadlocks.
+        // Only *queue* the request here — do NOT force Viewport->Draw / RedrawLevelEditing
+        // from this AsyncTask. A mid-task Draw enqueues RT work that historically hit
+        // FAppTime Ensure on the render thread. FScreenshotRequest is processed on the
+        // next natural engine tick (which has a proper AppTime context). Waiting for the
+        // file is done on the calling/socket thread so we do not deadlock the GT.
         if (bIsPIE && Viewport && !bSuccess && !bForceSceneCapture)
         {
-            // Force a fresh render so we don't capture a stale frame.
-            if (GEditor)
-            {
-                GEditor->RedrawLevelEditingViewports(true);
-            }
-            Viewport->Draw(true);
-
             // bInShowUI=true keeps the HUD and other Slate widgets in the shot.
             // Signature: RequestScreenshot(Filename, bShowUI, bAddFilenameSuffix).
             FScreenshotRequest::RequestScreenshot(*FullPath, true, false);
@@ -671,6 +675,10 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
             {
                 UE_LOG(LogUnrealMCP, Log, TEXT("[MCP Screenshot] Scene capture at %s rot %s fov=%.1f proj=%d ortho=%.1f"), *CaptureLocation.ToString(), *CaptureRotation.ToString(), CaptureFOV, (int32)CaptureProjection, CaptureOrthoWidth);
 
+                // Re-seed again immediately before CaptureScene/Flush in case earlier GT
+                // work cleared TLS (same UE 5.8 FAppTime Ensure class as viewport Draw).
+                FApp::SetCurrentTime(FApp::GetCurrentTime());
+
                 FActorSpawnParameters SpawnParams;
                 SpawnParams.bNoFail = true;
                 SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -761,9 +769,19 @@ FString HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
     }
 
     // Final fallback without Slate UI (or a second attempt if the UI request failed).
+    // Must queue on the GameThread — never call engine screenshot APIs from the socket thread.
     if (!bSuccess)
     {
-        FScreenshotRequest::RequestScreenshot(*FullPath, false, false);
+        FEvent* FallbackDone = FPlatformProcess::GetSynchEventFromPool();
+        AsyncTask(ENamedThreads::GameThread, [&]()
+        {
+            FApp::SetCurrentTime(FApp::GetCurrentTime());
+            FScreenshotRequest::RequestScreenshot(*FullPath, false, false);
+            FallbackDone->Trigger();
+        });
+        FallbackDone->Wait();
+        FPlatformProcess::ReturnSynchEventToPool(FallbackDone);
+
         double Timeout = 20.0;
         double StartTime = FPlatformTime::Seconds();
         while (!IFileManager::Get().FileExists(*FullPath))
