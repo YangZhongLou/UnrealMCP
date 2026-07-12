@@ -14,6 +14,8 @@
 #include "Async/Async.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "RenderingThread.h"
+#include "Misc/PackageName.h"
 
 static TMap<FString, AActor*> SpawnedActors;
 
@@ -348,35 +350,87 @@ FString HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
     }
 
     bool bSuccess = false;
+    bool bAlreadyOpen = false;
+    FString ErrorMsg;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
     AsyncTask(ENamedThreads::GameThread, [&]()
     {
-        if (GEditor)
+        if (!GEditor)
         {
-            // Suppress UI dialogs during level load
-            bool bPrevUnattended = GIsRunningUnattendedScript;
-            GIsRunningUnattendedScript = true;
-
-            ULevelEditorSubsystem* LevelEditor = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
-            if (LevelEditor)
-            {
-                bSuccess = LevelEditor->LoadLevel(Path);
-            }
-
-            GIsRunningUnattendedScript = bPrevUnattended;
+            ErrorMsg = TEXT("Editor not available");
+            DoneEvent->Trigger();
+            return;
         }
+
+        // End PIE before editor map load. Leaving PlayWorld alive while LoadLevel tears
+        // down the editor world races the render thread into FAppTime without inherited
+        // context (UE 5.8 Ensure: IsInGameThread / FAppTime).
+        if (GEditor->PlayWorld != nullptr)
+        {
+            GEditor->EndPlayMap();
+        }
+
+        // Drain outstanding RT work before UWorld::CleanupWorld.
+        FlushRenderingCommands();
+
+        UWorld* CurrentWorld = GEditor->GetEditorWorldContext().World();
+        if (CurrentWorld)
+        {
+            const FString CurrentPackage = CurrentWorld->GetOutermost()->GetName();
+            const FString CurrentMap = CurrentWorld->GetMapName();
+            const FString RequestedShort = FPackageName::GetShortName(Path);
+            const bool bSamePackage =
+                CurrentPackage.Equals(Path, ESearchCase::IgnoreCase) ||
+                CurrentPackage.EndsWith(Path, ESearchCase::IgnoreCase) ||
+                Path.EndsWith(CurrentPackage, ESearchCase::IgnoreCase);
+            const bool bSameShortName =
+                !RequestedShort.IsEmpty() &&
+                (CurrentMap.Equals(RequestedShort, ESearchCase::IgnoreCase) ||
+                 CurrentPackage.EndsWith(RequestedShort, ESearchCase::IgnoreCase));
+            if (bSamePackage || bSameShortName)
+            {
+                bSuccess = true;
+                bAlreadyOpen = true;
+                DoneEvent->Trigger();
+                return;
+            }
+        }
+
+        // Suppress UI dialogs during level load
+        const bool bPrevUnattended = GIsRunningUnattendedScript;
+        GIsRunningUnattendedScript = true;
+
+        if (ULevelEditorSubsystem* LevelEditor = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>())
+        {
+            bSuccess = LevelEditor->LoadLevel(Path);
+        }
+        else
+        {
+            ErrorMsg = TEXT("LevelEditorSubsystem not available");
+        }
+
+        // Let the RT finish any recreate work under inherited GT time context.
+        FlushRenderingCommands();
+
+        GIsRunningUnattendedScript = bPrevUnattended;
         DoneEvent->Trigger();
     });
 
     DoneEvent->Wait();
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
+    if (!ErrorMsg.IsEmpty())
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg.Replace(TEXT("\""), TEXT("'")));
+    }
+
     if (bSuccess)
     {
         TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
         Result->SetStringField(TEXT("path"), Path);
         Result->SetBoolField(TEXT("opened"), true);
+        Result->SetBoolField(TEXT("already_open"), bAlreadyOpen);
 
         FString ResultStr;
         TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);

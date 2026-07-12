@@ -1046,71 +1046,57 @@ FString HandleGenerateCppClass(const TSharedPtr<FJsonObject>& Params)
 }
 
 FString HandleGetCurrentLevel(const TSharedPtr<FJsonObject>& Params)
-
 {
-
     if (!GEditor)
-
     {
-
         return TEXT("{\"success\":false,\"error\":\"Editor not available\"}");
-
     }
 
-    UWorld* World = GEditor->GetEditorWorldContext().World();
-
-    if (!World)
-
-    {
-
-        return TEXT("{\"success\":false,\"error\":\"No world available\"}");
-
-    }
-
-    FString LevelName = World->GetMapName();
-
-    FString LevelPath = World->GetOutermost()->GetName();
-
+    FString LevelName;
+    FString LevelPath;
     int32 ActorCount = 0;
-
+    FString ErrorMsg;
     FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
 
     AsyncTask(ENamedThreads::GameThread, [&]()
-
     {
-
-        for (TActorIterator<AActor> It(World); It; ++It)
-
+        UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+        if (!World)
         {
-
-            ActorCount++;
-
+            ErrorMsg = TEXT("No world available");
+            DoneEvent->Trigger();
+            return;
         }
 
+        LevelName = World->GetMapName();
+        LevelPath = World->GetOutermost()->GetName();
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            ActorCount++;
+        }
         DoneEvent->Trigger();
-
     });
 
     DoneEvent->Wait();
-
     FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
 
+    if (!ErrorMsg.IsEmpty())
+    {
+        return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+    }
+
     TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-
     Result->SetStringField(TEXT("name"), LevelName);
-
     Result->SetStringField(TEXT("path"), LevelPath);
-
+    // Compat aliases used by older Python helpers (level_name / level_path).
+    Result->SetStringField(TEXT("level_name"), LevelName);
+    Result->SetStringField(TEXT("level_path"), LevelPath);
     Result->SetNumberField(TEXT("actor_count"), ActorCount);
 
     FString ResultStr;
-
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultStr);
-
     FJsonSerializer::Serialize(Result.ToSharedRef(), Writer);
-
     return FString::Printf(TEXT("{\"success\":true,\"result\":%s}"), *ResultStr);
-
 }
 
 FString HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
