@@ -23,6 +23,9 @@
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/Border.h"
+#include "Components/Slider.h"
+#include "Components/ComboBoxString.h"
+#include "Components/CheckBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -128,7 +131,10 @@ namespace HtmlUmgGen
 		{
 			return ESlateVisibility::Visible;
 		}
-		if (Cast<UButton>(Widget))
+		if (Cast<UButton>(Widget)
+			|| Cast<USlider>(Widget)
+			|| Cast<UComboBoxString>(Widget)
+			|| Cast<UCheckBox>(Widget))
 		{
 			return ESlateVisibility::Visible;
 		}
@@ -221,6 +227,9 @@ namespace HtmlUmgGen
 			Map.Add(TEXT("Image"), UImage::StaticClass());
 			Map.Add(TEXT("ProgressBar"), UProgressBar::StaticClass());
 			Map.Add(TEXT("Border"), UBorder::StaticClass());
+			Map.Add(TEXT("Slider"), USlider::StaticClass());
+			Map.Add(TEXT("ComboBoxString"), UComboBoxString::StaticClass());
+			Map.Add(TEXT("CheckBox"), UCheckBox::StaticClass());
 		}
 		if (UClass* const* Found = Map.Find(TypeName))
 		{
