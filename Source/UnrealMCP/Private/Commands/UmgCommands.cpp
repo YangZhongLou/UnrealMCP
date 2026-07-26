@@ -26,6 +26,7 @@
 #include "Components/Slider.h"
 #include "Components/ComboBoxString.h"
 #include "Components/CheckBox.h"
+#include "Components/EditableTextBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -230,6 +231,7 @@ namespace HtmlUmgGen
 			Map.Add(TEXT("Slider"), USlider::StaticClass());
 			Map.Add(TEXT("ComboBoxString"), UComboBoxString::StaticClass());
 			Map.Add(TEXT("CheckBox"), UCheckBox::StaticClass());
+			Map.Add(TEXT("EditableTextBox"), UEditableTextBox::StaticClass());
 		}
 		if (UClass* const* Found = Map.Find(TypeName))
 		{
