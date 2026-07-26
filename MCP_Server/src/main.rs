@@ -1,6 +1,7 @@
 use rmcp::ServiceExt;
 use tracing::info;
 
+mod html_umg;
 mod server;
 mod unreal_client;
 
@@ -12,8 +13,8 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let unreal_addr = std::env::var("UNREAL_MCP_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:13377".to_string());
+    let unreal_addr =
+        std::env::var("UNREAL_MCP_ADDR").unwrap_or_else(|_| "127.0.0.1:13377".to_string());
 
     info!("Starting Unreal MCP Server...");
     info!("Connecting to Unreal at: {}", unreal_addr);

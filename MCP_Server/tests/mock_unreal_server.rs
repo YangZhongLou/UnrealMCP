@@ -1,6 +1,6 @@
+use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use serde_json::{json, Value};
 
 fn build_response(req: &Value) -> Value {
     let method = req["method"].as_str().unwrap_or("unknown");
@@ -335,7 +335,9 @@ pub struct MockUnrealServer {
 
 impl MockUnrealServer {
     pub async fn start(port: u16) -> (Self, u16) {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
         let bound_port = listener.local_addr().unwrap().port();
         let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
 

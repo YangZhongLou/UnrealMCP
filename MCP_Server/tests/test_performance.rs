@@ -1,7 +1,7 @@
-use unreal_mcp_server::unreal_client::UnrealClient;
 use serde_json::json;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use unreal_mcp_server::unreal_client::UnrealClient;
 
 mod mock_unreal_server;
 use mock_unreal_server::MockUnrealServer;
@@ -12,11 +12,18 @@ async fn test_response_timing() {
     let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
 
     let start = Instant::now();
-    let response = client.send_command("get_editor_info", json!({})).await.unwrap();
+    let response = client
+        .send_command("get_editor_info", json!({}))
+        .await
+        .unwrap();
     let elapsed = start.elapsed();
 
     assert_eq!(response["success"], true);
-    assert!(elapsed.as_millis() < 500, "Response too slow: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 500,
+        "Response too slow: {:?}",
+        elapsed
+    );
 
     mock.stop().await;
 }
@@ -25,7 +32,9 @@ async fn test_response_timing() {
 async fn test_concurrent_connections() {
     // Use a concurrent-capable mock that handles multiple connections
     let port = 13401;
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+        .await
+        .unwrap();
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
 
@@ -56,7 +65,9 @@ async fn test_concurrent_connections() {
         let port = port;
         handles.push(tokio::spawn(async move {
             let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
-            client.send_command("get_editor_info", json!({"index": i})).await
+            client
+                .send_command("get_editor_info", json!({"index": i}))
+                .await
         }));
     }
 
@@ -82,13 +93,19 @@ async fn test_many_sequential_commands() {
 
     let start = Instant::now();
     for i in 0..100 {
-        let response = client.send_command("get_editor_info", json!({"seq": i})).await.unwrap();
+        let response = client
+            .send_command("get_editor_info", json!({"seq": i}))
+            .await
+            .unwrap();
         assert_eq!(response["success"], true, "Command {} failed", i);
     }
     let elapsed = start.elapsed();
 
     let avg_ms = elapsed.as_micros() as f64 / 100.0;
-    println!("100 sequential commands: {:?} total, {:.0}us avg", elapsed, avg_ms);
+    println!(
+        "100 sequential commands: {:?} total, {:.0}us avg",
+        elapsed, avg_ms
+    );
     assert!(avg_ms < 5000.0, "Average too slow: {:.0}us", avg_ms);
 
     mock.stop().await;
@@ -101,7 +118,10 @@ async fn test_reconnection() {
     // First server instance
     let (mock1, _) = MockUnrealServer::start(port).await;
     let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
-    let r1 = client.send_command("get_editor_info", json!({})).await.unwrap();
+    let r1 = client
+        .send_command("get_editor_info", json!({}))
+        .await
+        .unwrap();
     assert_eq!(r1["success"], true);
     mock1.stop().await;
 
@@ -131,7 +151,10 @@ async fn test_large_response() {
     let mut client = UnrealClient::new(&format!("127.0.0.1:{}", port));
 
     let start = Instant::now();
-    let response = client.send_command("get_actor_list", json!({})).await.unwrap();
+    let response = client
+        .send_command("get_actor_list", json!({}))
+        .await
+        .unwrap();
     let elapsed = start.elapsed();
 
     assert_eq!(response["success"], true);

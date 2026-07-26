@@ -21,36 +21,26 @@ Unreal Editor API
 
 ```text
 UnrealMCP/
-├── MCP_Server/           # Rust MCP Server
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs       # 程序入口
-│       ├── server.rs     # MCP Server + Tools
-│       └── unreal_client.rs  # TCP Client
-├── UnrealPlugin/         # Unreal Engine C++ 插件
-│   ├── UnrealMCP.uplugin
-│   └── Source/
-│       └── UnrealMCP/
-│           ├── Private/
-│           │   ├── UnrealMCP.cpp
-│           │   ├── MCPCommandServer.cpp
-│           │   └── Commands/
-│           │       ├── ActorCommands.cpp
-│           │       ├── AssetCommands.cpp
-│           │       ├── BlueprintCommands.cpp
-│           │       ├── ComponentCommands.cpp
-│           │       ├── EditorCommands.cpp
-│           │       ├── MaterialCommands.cpp
-│           │       └── RuntimeCameraCommands.cpp
-│           └── Public/
-│               ├── UnrealMCP.h
-│               └── MCPCommandServer.h
+├── MCP_Server/           # Rust MCP Server（主工具集 + generate_umg_widget）
+├── html_umg_mcp/         # 独立 Python MCP：HTML 设计稿 → UMG（见 html_umg_mcp/README.md）
+├── UnrealPlugin/         # （历史）引擎插件镜像；实际源码在 Source/
+├── Source/UnrealMCP/     # C++ 插件（含 Commands/UmgCommands.cpp）
 ├── SkillHub/             # git submodule (技能库)
-├── docs/plan/            # 开发计划文档
+├── docs/                 # 使用与配置文档
 └── README.md
 ```
 
-## 已实现功能 (73 个工具)
+## HTML → UMG（主 MCP 内置）
+
+局内 HUD 可用 HTML mockup 生成 Widget Blueprint，工具已挂在 **本插件 Rust MCP** 上：
+
+- `analyze_html_layout` / `generate_umg_from_html` / `generate_umg_from_json` /
+  `generate_umg_widget` / `list_html_umg_capabilities`
+- 文档：[docs/html-umg-mcp.md](docs/html-umg-mcp.md)
+- UE 命令：`generate_umg_widget`（TCP `13377`）
+- `html_umg_mcp/` 仅离线烟测，**不要**再注册为独立 MCP
+
+## 已实现功能 (73+ 个工具)
 
 ### Actor 操作 (9)
 

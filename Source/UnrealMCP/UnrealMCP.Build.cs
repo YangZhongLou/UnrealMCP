@@ -56,6 +56,8 @@ public class UnrealMCP : ModuleRules
                     "EditorSubsystem",
                     "EditorScriptingUtilities",
                     "AssetRegistry",
+                    "AssetTools",
+                    "UMGEditor",
                     "Hexagon",
                     "Niagara",
                     "NiagaraCore"

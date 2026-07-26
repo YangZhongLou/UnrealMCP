@@ -79,6 +79,20 @@ CommandServerPort=13377
 JsonRpcServerPort=13379
 ```
 
+## HTML → UMG（主 MCP 内置）
+
+已并入 UnrealMCP 主服务，勿单独配置 `html-umg`：
+
+- 工具：`analyze_html_layout`、`generate_umg_from_html` 等
+- 说明：[html-umg-mcp.md](html-umg-mcp.md)
+
+详见上文「Claude Code `.mcp.json`」中的 `unreal` 服务即可。
+
+## HTML → UMG MCP（已弃用独立进程）
+
+~~独立 `html_umg_mcp/server.py`~~ → 逻辑在 `MCP_Server/src/html_umg.rs`。
+`html_umg_mcp/` 仅保留 `smoke_parse.py` 离线对照。
+
 **项目 B — `Config/DefaultEngine.ini`：**
 ```ini
 [UnrealMCP]

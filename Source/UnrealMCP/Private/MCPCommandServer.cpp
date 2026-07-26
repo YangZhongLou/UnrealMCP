@@ -101,6 +101,7 @@ FString HandleCreateMaterialFromTextures(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetTextureParameter(const TSharedPtr<FJsonObject>& Params);
 FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params);
+FString HandleGenerateUmgWidget(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -224,60 +225,88 @@ void FMCPCommandServer::Exit()
 
 void FMCPCommandServer::HandleClientConnection(FSocket* ClientSocket)
 {
-    TArray<uint8> Buffer;
-    Buffer.SetNumUninitialized(65536);
+    constexpr int32 ChunkSize = 64 * 1024;
+    constexpr int32 MaxRequestSize = 8 * 1024 * 1024;
+    TArray<uint8> Chunk;
+    Chunk.SetNumUninitialized(ChunkSize);
+    TArray<uint8> RequestBytes;
+    RequestBytes.Reserve(ChunkSize);
 
-    while (bRunning)
+    while (bRunning && RequestBytes.Num() <= MaxRequestSize)
     {
         int32 BytesRead = 0;
-        if (!ClientSocket->Recv(Buffer.GetData(), Buffer.Num(), BytesRead) || BytesRead == 0)
+        if (!ClientSocket->Recv(Chunk.GetData(), Chunk.Num(), BytesRead) || BytesRead <= 0)
         {
             break;
         }
 
+        RequestBytes.Append(Chunk.GetData(), BytesRead);
+        const int32 DelimiterIndex = RequestBytes.Find(static_cast<uint8>('\n'));
+        if (DelimiterIndex != INDEX_NONE)
         {
-            // BytesRead > 0 guaranteed here
-            // Null-terminate within buffer bounds so UTF8_TO_TCHAR stops correctly
-            if (BytesRead < Buffer.Num())
-            {
-                Buffer[BytesRead] = '\0';
-            }
-            FString RequestStr = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buffer.GetData())));
-
-            UE_LOG(LogMCPCommandServer, Log, TEXT("Received: %s"), *RequestStr);
-
-            FString ResponseStr = ProcessCommand(RequestStr);
-
-            // Append a double-newline delimiter so the Rust client can reliably
-            // find the end of the response even when the JSON itself is pretty-printed
-            // and contains single newlines. This also lets us send responses larger
-            // than the old 64 KiB one-shot buffer.
-            ResponseStr += TEXT("\n\n");
-
-            FTCHARToUTF8 UTF8Response(*ResponseStr);
-            int32 TotalLen = UTF8Response.Length();
-            int32 BytesSent = 0;
-            while (BytesSent < TotalLen)
-            {
-                int32 Sent = 0;
-                if (!ClientSocket->Send((const uint8*)UTF8Response.Get() + BytesSent, TotalLen - BytesSent, Sent))
-                {
-                    UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send failed"));
-                    break;
-                }
-                if (Sent <= 0)
-                {
-                    UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send returned 0"));
-                    break;
-                }
-                BytesSent += Sent;
-            }
+            RequestBytes.SetNum(DelimiterIndex, EAllowShrinking::No);
+            break;
         }
 
-        // One command per connection. This prevents a blocked/stuck client from
-        // pinning the single server thread, and it lets us safely send large
-        // responses without worrying about the client closing mid-send.
-        break;
+        // Backward compatibility: older local Python clients did not append a
+        // newline. If the accumulated bytes already form a complete JSON object,
+        // process it now instead of deadlocking until the client times out.
+        FUTF8ToTCHAR CandidateUtf8(
+            reinterpret_cast<const ANSICHAR*>(RequestBytes.GetData()),
+            RequestBytes.Num());
+        const FString Candidate(CandidateUtf8.Length(), CandidateUtf8.Get());
+        TSharedPtr<FJsonObject> CandidateObject;
+        const TSharedRef<TJsonReader<>> CandidateReader =
+            TJsonReaderFactory<>::Create(Candidate);
+        if (FJsonSerializer::Deserialize(CandidateReader, CandidateObject)
+            && CandidateObject.IsValid())
+        {
+            break;
+        }
+    }
+
+    if (RequestBytes.IsEmpty())
+    {
+        return;
+    }
+    if (RequestBytes.Num() > MaxRequestSize)
+    {
+        UE_LOG(LogMCPCommandServer, Error,
+            TEXT("Request exceeded %d bytes; closing connection"), MaxRequestSize);
+        return;
+    }
+
+    RequestBytes.Add('\0');
+    const FString RequestStr = FString(
+        UTF8_TO_TCHAR(reinterpret_cast<const char*>(RequestBytes.GetData())));
+    UE_LOG(LogMCPCommandServer, Log,
+        TEXT("Received request (%d bytes)"), RequestBytes.Num() - 1);
+
+    FString ResponseStr = ProcessCommand(RequestStr);
+
+    // Append a double-newline delimiter so clients can frame pretty-printed JSON.
+    ResponseStr += TEXT("\n\n");
+
+    FTCHARToUTF8 UTF8Response(*ResponseStr);
+    const int32 TotalLen = UTF8Response.Length();
+    int32 BytesSent = 0;
+    while (BytesSent < TotalLen)
+    {
+        int32 Sent = 0;
+        if (!ClientSocket->Send(
+                reinterpret_cast<const uint8*>(UTF8Response.Get()) + BytesSent,
+                TotalLen - BytesSent,
+                Sent))
+        {
+            UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send failed"));
+            break;
+        }
+        if (Sent <= 0)
+        {
+            UE_LOG(LogMCPCommandServer, Error, TEXT("Socket send returned 0"));
+            break;
+        }
+        BytesSent += Sent;
     }
 }
 
@@ -702,6 +731,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("set_niagara_parameter"))
     {
         ResultStr = HandleSetNiagaraParameter(Params);
+    }
+    else if (Method == TEXT("generate_umg_widget"))
+    {
+        ResultStr = HandleGenerateUmgWidget(Params);
     }
     else
     {

@@ -15,6 +15,10 @@ UnrealPlugin/
 third_party/
 __pycache__/
 
+# HTML→UMG local dumps
+_last_main_hud_tree.json
+*.umg.json
+
 # Runtime configuration and downloaded model weights
 audio_server/.env
 weights/
