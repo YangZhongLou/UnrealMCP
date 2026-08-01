@@ -102,6 +102,7 @@ FString HandleSetTextureParameter(const TSharedPtr<FJsonObject>& Params);
 FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params);
 FString HandleGenerateUmgWidget(const TSharedPtr<FJsonObject>& Params);
+FString HandleRenderWidgetPreview(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -735,6 +736,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("generate_umg_widget"))
     {
         ResultStr = HandleGenerateUmgWidget(Params);
+    }
+    else if (Method == TEXT("render_widget_preview"))
+    {
+        ResultStr = HandleRenderWidgetPreview(Params);
     }
     else
     {

@@ -40,6 +40,35 @@ def _text_style(color: str = YUBAI, size: int = 14) -> dict[str, Any]:
     return {"color": color, "font_size": size}
 
 
+def _style_from_data_umg_attrs(attr_get) -> dict[str, Any]:
+    """Build UMG style dict from optional data-umg-color/bg/font-size/opacity/brush."""
+    style: dict[str, Any] = {}
+    color = attr_get("color", "").strip()
+    if color:
+        style["color"] = color
+    bg = attr_get("bg", "").strip()
+    if not bg:
+        bg = attr_get("background-color", "").strip()
+    if bg:
+        style["background_color"] = bg
+    font_size = attr_get("font-size", "").strip()
+    if font_size:
+        try:
+            style["font_size"] = int(float(font_size))
+        except ValueError:
+            pass
+    opacity = attr_get("opacity", "").strip()
+    if opacity:
+        try:
+            style["opacity"] = float(opacity)
+        except ValueError:
+            pass
+    brush = attr_get("brush", "").strip()
+    if brush:
+        style["brush"] = brush
+    return style
+
+
 def _btn(
     name: str,
     text: str,
@@ -554,6 +583,7 @@ def _parse_data_umg_tree(html: str) -> dict[str, Any] | None:
         name = attr("name")
         anchors = attr("anchor")
         text = re.sub(r"<[^>]+>", "", inner).strip() or attr("text", "")
+        style = _style_from_data_umg_attrs(attr)
         widget = {
             "type": umg_type,
             "name": name,
@@ -563,7 +593,7 @@ def _parse_data_umg_tree(html: str) -> dict[str, Any] | None:
             "height": h,
             "text": text,
             "anchors": anchors,
-            "style": {},
+            "style": style,
             "children": [],
         }
         visibility = attr("visibility", "")

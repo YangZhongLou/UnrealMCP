@@ -21,6 +21,9 @@ class HtmlUmgParserTest(unittest.TestCase):
           data-umg-h="48"
           data-umg-visibility="collapsed"
           data-umg-z="7"
+          data-umg-color="#f5ebd7"
+          data-umg-bg="#a05a46"
+          data-umg-font-size="24"
         >确认</button>
         """
         tree = analyze_html(
@@ -33,6 +36,49 @@ class HtmlUmgParserTest(unittest.TestCase):
         self.assertEqual(button["name"], "BtnConfirm")
         self.assertEqual(button["visibility"], "collapsed")
         self.assertEqual(button["z_order"], 7)
+        self.assertEqual(button["style"]["color"], "#f5ebd7")
+        self.assertEqual(button["style"]["background_color"], "#a05a46")
+        self.assertEqual(button["style"]["font_size"], 24)
+
+    def test_data_umg_brush_passes_through(self) -> None:
+        html = """
+        <div
+          data-umg-type="Image"
+          data-umg-name="PanelBackground"
+          data-umg-anchor="top-left"
+          data-umg-x="420"
+          data-umg-y="180"
+          data-umg-w="1080"
+          data-umg-h="720"
+          data-umg-brush="/Game/UI/Texture/T_UI_Background_SettingsPanel_01"
+        ></div>
+        <button
+          data-umg-type="Button"
+          data-umg-name="BtnApply"
+          data-umg-anchor="top-left"
+          data-umg-x="680"
+          data-umg-y="655"
+          data-umg-w="220"
+          data-umg-h="64"
+          data-umg-color="#efe6d0"
+          data-umg-brush="/Game/UI/Texture/T_UI_Frame_ButtonBackground_01"
+        >应用</button>
+        """
+        tree = analyze_html(
+            html,
+            blueprint_name="WBP_Test",
+            output_path="/Game/UI/Test",
+        )
+        children = {c["name"]: c for c in tree["widgets"][0]["children"]}
+        self.assertEqual(tree["status"], "success")
+        self.assertEqual(
+            children["PanelBackground"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Background_SettingsPanel_01",
+        )
+        self.assertEqual(
+            children["BtnApply"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Frame_ButtonBackground_01",
+        )
 
     def test_main_hud_contract(self) -> None:
         html_path = (

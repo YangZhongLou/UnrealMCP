@@ -30,6 +30,31 @@ fn text_style(color: &str, size: i32) -> Value {
     json!({ "color": color, "font_size": size })
 }
 
+fn style_from_data_umg_attrs(attr: &dyn Fn(&str) -> Option<String>) -> Value {
+    let mut style = serde_json::Map::new();
+    if let Some(color) = attr("color") {
+        style.insert("color".into(), json!(color));
+    }
+    let bg = attr("bg").or_else(|| attr("background-color"));
+    if let Some(bg) = bg {
+        style.insert("background_color".into(), json!(bg));
+    }
+    if let Some(font_size) = attr("font-size") {
+        if let Ok(n) = font_size.parse::<f64>() {
+            style.insert("font_size".into(), json!(n as i32));
+        }
+    }
+    if let Some(opacity) = attr("opacity") {
+        if let Ok(n) = opacity.parse::<f64>() {
+            style.insert("opacity".into(), json!(n));
+        }
+    }
+    if let Some(brush) = attr("brush") {
+        style.insert("brush".into(), json!(brush));
+    }
+    Value::Object(style)
+}
+
 fn label(
     name: &str,
     text: &str,
@@ -234,7 +259,7 @@ fn parse_data_umg(html: &str) -> Result<Option<Value>, String> {
             "height": h,
             "text": text,
             "anchors": anchors,
-            "style": {},
+            "style": style_from_data_umg_attrs(&attr),
             "children": []
         });
         if let Some(visibility) = attr("visibility") {
@@ -872,7 +897,7 @@ mod tests {
 
     #[test]
     fn parses_explicit_data_umg_contract() {
-        let html = r#"
+        let html = r##"
             <button
                 data-umg-type="Button"
                 data-umg-name="BtnConfirm"
@@ -883,8 +908,11 @@ mod tests {
                 data-umg-h="48"
                 data-umg-visibility="collapsed"
                 data-umg-z="7"
+                data-umg-color="#f5ebd7"
+                data-umg-bg="#a05a46"
+                data-umg-font-size="24"
             >确认</button>
-        "#;
+        "##;
         let tree = analyze_html(html, Some("WBP_Test"), Some("/Game/UI/Test"));
         let button = find_widget(&tree, "BtnConfirm");
         assert_eq!(tree["status"], "success");
@@ -894,6 +922,9 @@ mod tests {
         assert_eq!(button["text"], "确认");
         assert_eq!(button["visibility"], "collapsed");
         assert_eq!(button["z_order"], 7);
+        assert_eq!(button["style"]["color"], "#f5ebd7");
+        assert_eq!(button["style"]["background_color"], "#a05a46");
+        assert_eq!(button["style"]["font_size"], 24);
         assert_eq!(
             find_widget(&tree, "RootCanvas")["visibility"],
             "self-hit-test-invisible"

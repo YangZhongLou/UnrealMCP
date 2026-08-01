@@ -34,7 +34,15 @@
 #include "UObject/SavePackage.h"
 #include "Misc/App.h"
 #include "Misc/PackageName.h"
+#include "Misc/FileHelper.h"
 #include "EditorAssetLibrary.h"
+#include "Editor.h"
+#include "Slate/WidgetRenderer.h"
+#include "Engine/Texture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "ImageUtils.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateTypes.h"
 
 namespace HtmlUmgGen
 {
@@ -240,14 +248,84 @@ namespace HtmlUmgGen
 		return UTextBlock::StaticClass();
 	}
 
+	static FString ResolveBrushObjectPath(const FString& InPath)
+	{
+		FString Path = InPath.TrimStartAndEnd();
+		if (Path.IsEmpty() || Path.Contains(TEXT(".")))
+		{
+			return Path;
+		}
+		const FString AssetName = FPackageName::GetShortName(Path);
+		return FString::Printf(TEXT("%s.%s"), *Path, *AssetName);
+	}
+
+	static void ApplyTextureBrush(UWidget* Widget, UTexture2D* Texture)
+	{
+		if (!Widget || !Texture)
+		{
+			return;
+		}
+		if (UImage* Img = Cast<UImage>(Widget))
+		{
+			FSlateBrush Brush;
+			Brush.SetResourceObject(Texture);
+			Brush.ImageSize = FVector2D(
+				static_cast<float>(Texture->GetSizeX()),
+				static_cast<float>(Texture->GetSizeY()));
+			Brush.DrawAs = ESlateBrushDrawType::Image;
+			Brush.TintColor = FSlateColor(FLinearColor::White);
+			Brush.Tiling = ESlateBrushTileType::NoTile;
+			Img->SetBrush(Brush);
+			Img->SetColorAndOpacity(FLinearColor::White);
+			return;
+		}
+		if (UButton* Btn = Cast<UButton>(Widget))
+		{
+			FSlateBrush Brush;
+			Brush.SetResourceObject(Texture);
+			Brush.ImageSize = FVector2D(256.f, 64.f);
+			Brush.DrawAs = ESlateBrushDrawType::Box;
+			Brush.Margin = FMargin(0.14f, 0.16f, 0.14f, 0.16f);
+			Brush.TintColor = FSlateColor(FLinearColor::White);
+			Brush.Tiling = ESlateBrushTileType::NoTile;
+
+			FSlateBrush Hovered = Brush;
+			Hovered.TintColor = FSlateColor(FLinearColor(1.08f, 1.08f, 1.08f, 1.f));
+			FSlateBrush Pressed = Brush;
+			Pressed.TintColor = FSlateColor(FLinearColor(0.92f, 0.92f, 0.92f, 1.f));
+
+			FButtonStyle Style = Btn->GetStyle();
+			Style.Normal = Brush;
+			Style.Hovered = Hovered;
+			Style.Pressed = Pressed;
+			Style.Disabled = Brush;
+			Style.NormalPadding = FMargin(0.f);
+			Style.PressedPadding = FMargin(0.f);
+			Btn->SetStyle(Style);
+		}
+	}
+
 	static void ApplyStyle(UWidget* Widget, const TSharedPtr<FJsonObject>& Style)
 	{
 		if (!Widget || !Style.IsValid())
 		{
 			return;
 		}
+
+		FString BrushPath;
+		const bool bHasBrush = Style->TryGetStringField(TEXT("brush"), BrushPath) && !BrushPath.IsEmpty();
+		if (bHasBrush)
+		{
+			const FString ObjectPath = ResolveBrushObjectPath(BrushPath);
+			if (UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, *ObjectPath))
+			{
+				ApplyTextureBrush(Widget, Tex);
+			}
+		}
+
 		FString ColorHex;
-		if (Style->TryGetStringField(TEXT("background_color"), ColorHex))
+		// Flat fill only when no brush (brush is the visual truth for Image / Button chrome).
+		if (!bHasBrush && Style->TryGetStringField(TEXT("background_color"), ColorHex))
 		{
 			double Opacity = 0.92;
 			if (!Style->TryGetNumberField(TEXT("opacity"), Opacity))
@@ -278,6 +356,7 @@ namespace HtmlUmgGen
 				Btn->SetStyle(BtnStyle);
 			}
 		}
+
 		FString TextColor;
 		double FontSize = 14.0;
 		Style->TryGetNumberField(TEXT("font_size"), FontSize);
@@ -596,6 +675,197 @@ FString HandleGenerateUmgWidget(const TSharedPtr<FJsonObject>& Params)
 		ResponseJson = MakeShareable(new FJsonObject);
 		ResponseJson->SetBoolField(TEXT("success"), true);
 		ResponseJson->SetObjectField(TEXT("result"), Result);
+		DoneEvent->Trigger();
+	});
+
+	DoneEvent->Wait();
+	FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+	if (!ErrorMsg.IsEmpty())
+	{
+		ErrorMsg.ReplaceInline(TEXT("\""), TEXT("'"));
+		return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+	}
+
+	FString Out;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+	FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+	return Out;
+}
+
+FString HandleRenderWidgetPreview(const TSharedPtr<FJsonObject>& Params)
+{
+	FString AssetPath = Params->HasField(TEXT("path")) ? Params->GetStringField(TEXT("path")) : TEXT("");
+	if (AssetPath.IsEmpty())
+	{
+		return TEXT("{\"success\":false,\"error\":\"missing 'path' (e.g. /Game/UI/Menus/WBP_PauseMenu_FromHtml)\"}");
+	}
+	// Normalize to a fully-qualified class path: /Game/UI/.../WBP_X -> /Game/UI/.../WBP_X.WBP_X_C
+	if (!AssetPath.Contains(TEXT(".")))
+	{
+		const FString ObjName = FPackageName::GetShortName(AssetPath);
+		AssetPath = FString::Printf(TEXT("%s.%s_C"), *AssetPath, *ObjName);
+	}
+
+	const int32 Width = Params->HasField(TEXT("width")) ? (int32)Params->GetNumberField(TEXT("width")) : 1920;
+	const int32 Height = Params->HasField(TEXT("height")) ? (int32)Params->GetNumberField(TEXT("height")) : 1080;
+	const FString Filename = Params->HasField(TEXT("filename")) ? Params->GetStringField(TEXT("filename")) : TEXT("wbp_preview");
+
+	FString Directory = Params->HasField(TEXT("directory"))
+		? Params->GetStringField(TEXT("directory"))
+		: FPaths::ScreenShotDir();
+	FPaths::RemoveDuplicateSlashes(Directory);
+	FPaths::NormalizeDirectoryName(Directory);
+	if (!Directory.IsEmpty())
+	{
+		IFileManager::Get().MakeDirectory(*Directory, true);
+	}
+	const FString FullPath = Directory / (Filename + TEXT(".png"));
+	const FString TreePath = Directory / (Filename + TEXT(".tree.json"));
+
+	bool bOk = false;
+	int32 WidgetCount = 0;
+	FString ErrorMsg;
+	TSharedPtr<FJsonObject> ResponseJson;
+
+	FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+	AsyncTask(ENamedThreads::GameThread, [&]()
+	{
+		// See HandleTakeScreenshot: re-seed FAppTime TLS so render-thread forks get a
+		// valid time context (FWidgetRenderer::DrawWidget flushes rendering commands).
+		FApp::SetCurrentTime(FApp::GetCurrentTime());
+
+		UClass* WbpClass = LoadClass<UUserWidget>(nullptr, *AssetPath);
+		if (!WbpClass)
+		{
+			ErrorMsg = FString::Printf(TEXT("widget blueprint class not found: %s"), *AssetPath);
+			DoneEvent->Trigger();
+			return;
+		}
+
+		// Prefer a real CreateWidget in the editor world; fall back to a transient
+		// instance (FromHtml shells are pure layout, no GetWorld dependencies).
+		UUserWidget* Preview = nullptr;
+		if (GEditor)
+		{
+			if (UWorld* EditorWorld = GEditor->GetEditorWorldContext().World())
+			{
+				Preview = CreateWidget<UUserWidget>(EditorWorld, WbpClass);
+			}
+		}
+		if (!Preview)
+		{
+			Preview = NewObject<UUserWidget>(GetTransientPackage(), WbpClass);
+		}
+		if (!Preview)
+		{
+			ErrorMsg = TEXT("failed to instantiate widget for preview");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		if (Preview->WidgetTree)
+		{
+			// Count widgets and dump the design-time tree (name/type/text/visibility/
+			// canvas layout) next to the PNG. Pixels can be unreadable (white-on-white
+			// shells); the tree JSON is the machine-checkable contract source.
+			Preview->WidgetTree->ForEachWidget([&WidgetCount](UWidget*) { ++WidgetCount; });
+
+			TArray<TSharedPtr<FJsonValue>> TreeArr;
+			Preview->WidgetTree->ForEachWidget([&TreeArr](UWidget* W)
+			{
+				if (!W)
+				{
+					return;
+				}
+				TSharedPtr<FJsonObject> WObj = MakeShareable(new FJsonObject);
+				WObj->SetStringField(TEXT("name"), W->GetName());
+				WObj->SetStringField(TEXT("type"), W->GetClass()->GetName());
+				if (UWidget* Parent = W->GetParent())
+				{
+					WObj->SetStringField(TEXT("parent"), Parent->GetName());
+				}
+				if (const UTextBlock* TB = Cast<UTextBlock>(W))
+				{
+					WObj->SetStringField(TEXT("text"), TB->GetText().ToString());
+				}
+				WObj->SetStringField(TEXT("visibility"),
+					StaticEnum<ESlateVisibility>()->GetNameStringByValue((int64)W->GetVisibility()));
+				if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(W->Slot))
+				{
+					const FVector2D Pos = CanvasSlot->GetPosition();
+					const FVector2D Size = CanvasSlot->GetSize();
+					const FAnchors Anch = CanvasSlot->GetAnchors();
+					TSharedPtr<FJsonObject> Layout = MakeShareable(new FJsonObject);
+					Layout->SetNumberField(TEXT("x"), Pos.X);
+					Layout->SetNumberField(TEXT("y"), Pos.Y);
+					Layout->SetNumberField(TEXT("w"), Size.X);
+					Layout->SetNumberField(TEXT("h"), Size.Y);
+					Layout->SetNumberField(TEXT("anchor_min_x"), Anch.Minimum.X);
+					Layout->SetNumberField(TEXT("anchor_min_y"), Anch.Minimum.Y);
+					Layout->SetNumberField(TEXT("anchor_max_x"), Anch.Maximum.X);
+					Layout->SetNumberField(TEXT("anchor_max_y"), Anch.Maximum.Y);
+					Layout->SetBoolField(TEXT("auto_size"), CanvasSlot->GetAutoSize());
+					WObj->SetObjectField(TEXT("canvas"), Layout);
+				}
+				TreeArr.Add(MakeShareable(new FJsonValueObject(WObj)));
+			});
+
+			TSharedPtr<FJsonObject> TreeRoot = MakeShareable(new FJsonObject);
+			TreeRoot->SetStringField(TEXT("blueprint_path"), AssetPath);
+			TreeRoot->SetNumberField(TEXT("width"), Width);
+			TreeRoot->SetNumberField(TEXT("height"), Height);
+			TreeRoot->SetArrayField(TEXT("widgets"), TreeArr);
+			FString TreeOut;
+			TSharedRef<TJsonWriter<>> TreeWriter = TJsonWriterFactory<>::Create(&TreeOut);
+			FJsonSerializer::Serialize(TreeRoot.ToSharedRef(), TreeWriter);
+			FFileHelper::SaveStringToFile(TreeOut, *TreePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+		}
+
+		TSharedRef<SWidget> SlateWidget = Preview->TakeWidget();
+		FWidgetRenderer Renderer(true);
+		UTextureRenderTarget2D* RenderTarget = Renderer.DrawWidget(SlateWidget, FVector2D(Width, Height));
+		if (!RenderTarget)
+		{
+			ErrorMsg = TEXT("FWidgetRenderer::DrawWidget returned null");
+		}
+		else
+		{
+			FlushRenderingCommands();
+			FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*FullPath);
+			if (FileWriter)
+			{
+				bOk = FImageUtils::ExportRenderTarget2DAsPNG(RenderTarget, *FileWriter);
+				FileWriter->Close();
+				delete FileWriter;
+				if (!bOk)
+				{
+					ErrorMsg = TEXT("ExportRenderTarget2DAsPNG failed");
+				}
+			}
+			else
+			{
+				ErrorMsg = FString::Printf(TEXT("failed to create file writer for %s"), *FullPath);
+			}
+		}
+
+		Preview->MarkAsGarbage();
+
+		if (bOk)
+		{
+			FString JsonPath = FullPath;
+			JsonPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+			TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+			Result->SetStringField(TEXT("blueprint_path"), AssetPath);
+			Result->SetStringField(TEXT("file"), JsonPath);
+			Result->SetNumberField(TEXT("width"), Width);
+			Result->SetNumberField(TEXT("height"), Height);
+			Result->SetNumberField(TEXT("widgets"), WidgetCount);
+
+			ResponseJson = MakeShareable(new FJsonObject);
+			ResponseJson->SetBoolField(TEXT("success"), true);
+			ResponseJson->SetObjectField(TEXT("result"), Result);
+		}
 		DoneEvent->Trigger();
 	});
 
