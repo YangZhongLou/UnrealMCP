@@ -103,6 +103,7 @@ FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
 FString HandleSetNiagaraParameter(const TSharedPtr<FJsonObject>& Params);
 FString HandleGenerateUmgWidget(const TSharedPtr<FJsonObject>& Params);
 FString HandleRenderWidgetPreview(const TSharedPtr<FJsonObject>& Params);
+FString HandleAuthorTitleScreenHostMotion(const TSharedPtr<FJsonObject>& Params);
 
 FMCPCommandServer::FMCPCommandServer()
     : Thread(nullptr)
@@ -740,6 +741,10 @@ FString FMCPCommandServer::ProcessCommand(const FString& JsonRequest)
     else if (Method == TEXT("render_widget_preview"))
     {
         ResultStr = HandleRenderWidgetPreview(Params);
+    }
+    else if (Method == TEXT("author_title_screen_host_motion"))
+    {
+        ResultStr = HandleAuthorTitleScreenHostMotion(Params);
     }
     else
     {

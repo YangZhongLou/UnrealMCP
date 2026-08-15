@@ -58,6 +58,8 @@ public class UnrealMCP : ModuleRules
                     "AssetRegistry",
                     "AssetTools",
                     "UMGEditor",
+                    "MovieScene",
+                    "MovieSceneTracks",
                     "Hexagon",
                     "Niagara",
                     "NiagaraCore"

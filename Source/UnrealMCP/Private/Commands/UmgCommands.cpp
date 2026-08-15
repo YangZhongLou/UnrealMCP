@@ -14,6 +14,22 @@
 #include "Components/Widget.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/NamedSlot.h"
+#include "Components/Image.h"
+#include "Components/TextBlock.h"
+#include "Animation/WidgetAnimation.h"
+#include "Animation/WidgetAnimationBinding.h"
+#include "MovieScene.h"
+#include "Channels/MovieSceneFloatChannel.h"
+#include "Sections/MovieSceneFloatSection.h"
+#include "Tracks/MovieSceneFloatTrack.h"
+#include "K2Node_Event.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_VariableGet.h"
+#include "K2Node_WidgetAnimationEvent.h"
+#include "EdGraphSchema_K2.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphPin.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Overlay.h"
@@ -866,6 +882,495 @@ FString HandleRenderWidgetPreview(const TSharedPtr<FJsonObject>& Params)
 			ResponseJson->SetBoolField(TEXT("success"), true);
 			ResponseJson->SetObjectField(TEXT("result"), Result);
 		}
+		DoneEvent->Trigger();
+	});
+
+	DoneEvent->Wait();
+	FPlatformProcess::ReturnSynchEventToPool(DoneEvent);
+
+	if (!ErrorMsg.IsEmpty())
+	{
+		ErrorMsg.ReplaceInline(TEXT("\""), TEXT("'"));
+		return FString::Printf(TEXT("{\"success\":false,\"error\":\"%s\"}"), *ErrorMsg);
+	}
+
+	FString Out;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+	FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
+	return Out;
+}
+
+namespace TitleHostMotion
+{
+	static constexpr float LogoFadeInDuration = 0.85f;
+	static constexpr float LogoBreathePeriod = 3.2f;
+	static constexpr float LogoBreatheAmplitude = 0.06f;
+	static constexpr float HintBreathePeriod = 1.6f;
+	static constexpr float HintBreatheBase = 0.55f;
+	static constexpr float HintBreatheAmplitude = 0.40f;
+
+	static float LogoBreatheOpacityAtPhase(float Phase01)
+	{
+		const float Sin = FMath::Sin(Phase01 * 2.f * PI);
+		return 1.f - LogoBreatheAmplitude * (0.5f + 0.5f * Sin);
+	}
+
+	static float HintBreatheOpacityAtPhase(float Phase01)
+	{
+		const float Sin = FMath::Sin(Phase01 * 2.f * PI);
+		return HintBreatheBase + HintBreatheAmplitude * (0.5f + 0.5f * Sin);
+	}
+
+	static UWidgetAnimation* FindOrCreateOpacityAnimation(
+		UWidgetBlueprint* WidgetBP,
+		FName AnimName,
+		FName TargetWidgetName,
+		UClass* TargetWidgetClass,
+		const TArray<TPair<float, float>>& TimeOpacityKeys,
+		float DurationSeconds)
+	{
+		if (!WidgetBP || TargetWidgetName.IsNone() || !TargetWidgetClass || TimeOpacityKeys.Num() < 2 || DurationSeconds <= 0.f)
+		{
+			return nullptr;
+		}
+
+		UWidgetAnimation* Existing = nullptr;
+		for (UWidgetAnimation* Anim : WidgetBP->Animations)
+		{
+			if (Anim && Anim->GetFName() == AnimName)
+			{
+				Existing = Anim;
+				break;
+			}
+		}
+
+		UWidgetAnimation* NewAnim = Existing;
+		if (!NewAnim)
+		{
+			NewAnim = NewObject<UWidgetAnimation>(WidgetBP, AnimName, RF_Transactional);
+			WidgetBP->Animations.Add(NewAnim);
+			WidgetBP->OnVariableAdded(AnimName);
+		}
+
+		NewAnim->SetDisplayLabel(AnimName.ToString());
+		NewAnim->AnimationBindings.Reset();
+
+		UMovieScene* MovieScene = NewObject<UMovieScene>(NewAnim, AnimName, RF_Transactional);
+		NewAnim->MovieScene = MovieScene;
+
+		const FFrameRate TickResolution(60, 1);
+		MovieScene->SetTickResolutionDirectly(TickResolution);
+		MovieScene->SetDisplayRate(FFrameRate(60, 1));
+		const FFrameNumber EndFrame = TickResolution.AsFrameNumber(DurationSeconds);
+		MovieScene->SetPlaybackRange(TRange<FFrameNumber>(FFrameNumber(0), EndFrame));
+
+		const FGuid BindingId = MovieScene->AddPossessable(TargetWidgetName.ToString(), TargetWidgetClass);
+
+		FWidgetAnimationBinding AnimBinding;
+		AnimBinding.WidgetName = TargetWidgetName;
+		AnimBinding.SlotWidgetName = NAME_None;
+		AnimBinding.AnimationGuid = BindingId;
+		AnimBinding.bIsRootWidget = false;
+		NewAnim->AnimationBindings.Add(AnimBinding);
+
+		UMovieSceneFloatTrack* FloatTrack = MovieScene->AddTrack<UMovieSceneFloatTrack>(BindingId);
+		if (!FloatTrack)
+		{
+			return nullptr;
+		}
+		FloatTrack->SetPropertyNameAndPath(TEXT("RenderOpacity"), TEXT("RenderOpacity"));
+
+		UMovieSceneSection* NewSection = FloatTrack->CreateNewSection();
+		UMovieSceneFloatSection* FloatSection = Cast<UMovieSceneFloatSection>(NewSection);
+		if (!FloatSection)
+		{
+			return nullptr;
+		}
+		FloatSection->SetRange(TRange<FFrameNumber>(FFrameNumber(0), EndFrame));
+		FloatTrack->AddSection(*FloatSection);
+
+		FMovieSceneFloatChannel& Channel = FloatSection->GetChannel();
+		Channel.Reset();
+		for (const TPair<float, float>& Key : TimeOpacityKeys)
+		{
+			const FFrameNumber Frame = TickResolution.AsFrameNumber(Key.Key);
+			Channel.AddCubicKey(Frame, Key.Value);
+		}
+
+		return NewAnim;
+	}
+
+	static UK2Node_CallFunction* AddPlayAnimationCall(
+		UEdGraph* Graph,
+		UFunction* PlayAnimFn,
+		int32 PosX,
+		int32 PosY,
+		int32 NumLoops)
+	{
+		UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(Graph);
+		CallNode->SetFromFunction(PlayAnimFn);
+		CallNode->AllocateDefaultPins();
+		CallNode->NodePosX = PosX;
+		CallNode->NodePosY = PosY;
+		CallNode->CreateNewGuid();
+		Graph->AddNode(CallNode);
+
+		if (UEdGraphPin* LoopsPin = CallNode->FindPin(TEXT("NumLoopsToPlay")))
+		{
+			const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+			Schema->TrySetDefaultValue(*LoopsPin, FString::FromInt(NumLoops));
+		}
+		return CallNode;
+	}
+
+	static UK2Node_VariableGet* AddAnimVarGet(
+		UEdGraph* Graph,
+		UWidgetBlueprint* WidgetBP,
+		FName AnimVarName,
+		int32 PosX,
+		int32 PosY)
+	{
+		UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(Graph);
+		// SelfMember resolves against the hosting Widget BP animation variables.
+		GetNode->VariableReference.SetSelfMember(AnimVarName);
+		GetNode->AllocateDefaultPins();
+		GetNode->NodePosX = PosX;
+		GetNode->NodePosY = PosY;
+		GetNode->CreateNewGuid();
+		Graph->AddNode(GetNode);
+		return GetNode;
+	}
+
+	static void ConnectPins(UEdGraphPin* A, UEdGraphPin* B)
+	{
+		if (!A || !B)
+		{
+			return;
+		}
+		const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+		if (!Schema->TryCreateConnection(A, B))
+		{
+			A->MakeLinkTo(B);
+		}
+	}
+
+	static UK2Node_Event* FindOrAddConstructEvent(UEdGraph* Graph)
+	{
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				if (EventNode->GetFunctionName() == TEXT("Construct")
+					&& EventNode->EventReference.GetMemberParentClass() == UUserWidget::StaticClass())
+				{
+					return EventNode;
+				}
+			}
+		}
+
+		UFunction* ConstructFn = UUserWidget::StaticClass()->FindFunctionByName(TEXT("Construct"));
+		UK2Node_Event* ConstructEvent = NewObject<UK2Node_Event>(Graph);
+		ConstructEvent->EventReference.SetExternalMember(ConstructFn->GetFName(), UUserWidget::StaticClass());
+		ConstructEvent->bOverrideFunction = true;
+		ConstructEvent->AllocateDefaultPins();
+		ConstructEvent->NodePosX = 0;
+		ConstructEvent->NodePosY = 0;
+		ConstructEvent->CreateNewGuid();
+		Graph->AddNode(ConstructEvent);
+		return ConstructEvent;
+	}
+
+	static void WireTitleMotionGraph(
+		UWidgetBlueprint* WidgetBP,
+		UWidgetAnimation* IntroAnim,
+		UWidgetAnimation* LogoBreatheAnim,
+		UWidgetAnimation* HintBreatheAnim)
+	{
+		if (!WidgetBP || WidgetBP->UbergraphPages.Num() == 0)
+		{
+			return;
+		}
+
+		UEdGraph* Graph = WidgetBP->UbergraphPages[0];
+		UFunction* PlayAnimFn = UUserWidget::StaticClass()->FindFunctionByName(TEXT("PlayAnimation"));
+		if (!Graph || !PlayAnimFn)
+		{
+			return;
+		}
+
+		// Remove previously authored TitleHost motion nodes (tagged by NodeComment).
+		TArray<UEdGraphNode*> ToRemove;
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (Node && Node->NodeComment == TEXT("TitleHostMotion"))
+			{
+				ToRemove.Add(Node);
+			}
+		}
+		for (UEdGraphNode* Node : ToRemove)
+		{
+			Node->BreakAllNodeLinks();
+			Graph->RemoveNode(Node);
+		}
+
+		auto Tag = [](UK2Node* Node)
+		{
+			Node->NodeComment = TEXT("TitleHostMotion");
+			Node->bCommentBubbleVisible = false;
+		};
+
+		UK2Node_Event* ConstructEvent = FindOrAddConstructEvent(Graph);
+		Tag(ConstructEvent);
+
+		UK2Node_CallFunction* PlayHint = AddPlayAnimationCall(Graph, PlayAnimFn, 400, -120, 0);
+		UK2Node_VariableGet* GetHint = AddAnimVarGet(Graph, WidgetBP, HintBreatheAnim->GetFName(), 200, -40);
+		Tag(PlayHint);
+		Tag(GetHint);
+		ConnectPins(ConstructEvent->FindPin(UEdGraphSchema_K2::PN_Then), PlayHint->FindPin(UEdGraphSchema_K2::PN_Execute));
+		{
+			UEdGraphPin* AnimOut = GetHint->FindPin(HintBreatheAnim->GetFName());
+			if (!AnimOut) { AnimOut = GetHint->GetValuePin(); }
+			ConnectPins(AnimOut, PlayHint->FindPin(TEXT("InAnimation")));
+		}
+
+		UK2Node_CallFunction* PlayIntro = AddPlayAnimationCall(Graph, PlayAnimFn, 400, 160, 1);
+		UK2Node_VariableGet* GetIntro = AddAnimVarGet(Graph, WidgetBP, IntroAnim->GetFName(), 200, 240);
+		Tag(PlayIntro);
+		Tag(GetIntro);
+		ConnectPins(PlayHint->FindPin(UEdGraphSchema_K2::PN_Then), PlayIntro->FindPin(UEdGraphSchema_K2::PN_Execute));
+		{
+			UEdGraphPin* AnimOut = GetIntro->FindPin(IntroAnim->GetFName());
+			if (!AnimOut) { AnimOut = GetIntro->GetValuePin(); }
+			ConnectPins(AnimOut, PlayIntro->FindPin(TEXT("InAnimation")));
+		}
+
+		UK2Node_WidgetAnimationEvent* IntroFinished = NewObject<UK2Node_WidgetAnimationEvent>(Graph);
+		IntroFinished->SourceWidgetBlueprint = WidgetBP;
+		IntroFinished->AnimationPropertyName = IntroAnim->GetMovieScene()->GetFName();
+		IntroFinished->Action = EWidgetAnimationEvent::Finished;
+		IntroFinished->CustomFunctionName = FName(*FString::Printf(
+			TEXT("WidgetAnimationEvt_%s_%s"),
+			*IntroFinished->AnimationPropertyName.ToString(),
+			*IntroFinished->GetName()));
+		IntroFinished->AllocateDefaultPins();
+		IntroFinished->NodePosX = 0;
+		IntroFinished->NodePosY = 420;
+		IntroFinished->CreateNewGuid();
+		Graph->AddNode(IntroFinished);
+		Tag(IntroFinished);
+
+		UK2Node_CallFunction* PlayBreathe = AddPlayAnimationCall(Graph, PlayAnimFn, 400, 420, 0);
+		UK2Node_VariableGet* GetBreathe = AddAnimVarGet(Graph, WidgetBP, LogoBreatheAnim->GetFName(), 200, 500);
+		Tag(PlayBreathe);
+		Tag(GetBreathe);
+		ConnectPins(IntroFinished->FindPin(UEdGraphSchema_K2::PN_Then), PlayBreathe->FindPin(UEdGraphSchema_K2::PN_Execute));
+		{
+			UEdGraphPin* AnimOut = GetBreathe->FindPin(LogoBreatheAnim->GetFName());
+			if (!AnimOut) { AnimOut = GetBreathe->GetValuePin(); }
+			ConnectPins(AnimOut, PlayBreathe->FindPin(TEXT("InAnimation")));
+		}
+	}
+}
+
+FString HandleAuthorTitleScreenHostMotion(const TSharedPtr<FJsonObject>& Params)
+{
+	const FString AssetPath = Params.IsValid() && Params->HasField(TEXT("path"))
+		? Params->GetStringField(TEXT("path"))
+		: TEXT("/Game/UI/Widgets/WBP_TitleScreen");
+
+	FString ErrorMsg;
+	TSharedPtr<FJsonObject> ResponseJson;
+	FEvent* DoneEvent = FPlatformProcess::GetSynchEventFromPool();
+
+	AsyncTask(ENamedThreads::GameThread, [&]()
+	{
+		UWidgetBlueprint* WidgetBP = LoadObject<UWidgetBlueprint>(nullptr, *AssetPath);
+		if (!WidgetBP)
+		{
+			// Create host if missing.
+			UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
+			if (UClass* Parent = LoadClass<UUserWidget>(nullptr, TEXT("/Script/ClanSimulator.TitleScreenWidget")))
+			{
+				Factory->ParentClass = Parent;
+			}
+			IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+			UObject* NewAsset = AssetTools.CreateAsset(
+				TEXT("WBP_TitleScreen"),
+				TEXT("/Game/UI/Widgets"),
+				UWidgetBlueprint::StaticClass(),
+				Factory);
+			WidgetBP = Cast<UWidgetBlueprint>(NewAsset);
+		}
+
+		if (!WidgetBP || !WidgetBP->WidgetTree)
+		{
+			ErrorMsg = TEXT("WBP_TitleScreen missing or has no WidgetTree");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		if (WidgetBP->ParentClass && WidgetBP->ParentClass->GetName().Contains(TEXT("FromHtml")))
+		{
+			ErrorMsg = TEXT("ANTI-PATTERN: host must NOT inherit FromHtml");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		WidgetBP->Modify();
+		UWidgetTree* Tree = WidgetBP->WidgetTree;
+		Tree->Modify();
+
+		UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(Tree->RootWidget);
+		if (!RootCanvas)
+		{
+			RootCanvas = Tree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RootCanvas"));
+			Tree->RootWidget = RootCanvas;
+		}
+		RootCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+		// Shell widgets: BindWidgetOptional on C++ host — mark bIsVariable and register Guid map
+		// so compile does not Ensure-fail (raw ConstructWidget alone is insufficient).
+		auto EnsureNamedChild = [&](FName WidgetName, UClass* Class, TFunctionRef<void(UWidget*)> Configure) -> UWidget*
+		{
+			UWidget* Existing = Tree->FindWidget(WidgetName);
+			if (!Existing)
+			{
+				Existing = Tree->ConstructWidget<UWidget>(Class, WidgetName);
+				if (UCanvasPanelSlot* Slot = RootCanvas->AddChildToCanvas(Existing))
+				{
+					if (WidgetName == TEXT("HtmlSlot"))
+					{
+						Slot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+						Slot->SetOffsets(FMargin(0.f));
+						Slot->SetZOrder(0);
+					}
+					else if (WidgetName == TEXT("TitleLogo"))
+					{
+						Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+						Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+						Slot->SetPosition(FVector2D(0.f, -130.f));
+						Slot->SetSize(FVector2D(560.f, 740.f));
+						Slot->SetAutoSize(false);
+						Slot->SetZOrder(10);
+					}
+					else if (WidgetName == TEXT("HintText"))
+					{
+						Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+						Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+						Slot->SetPosition(FVector2D(0.f, 332.f));
+						Slot->SetSize(FVector2D(400.f, 40.f));
+						Slot->SetAutoSize(false);
+						Slot->SetZOrder(11);
+					}
+				}
+			}
+			Existing->bIsVariable = true;
+			if (!WidgetBP->WidgetVariableNameToGuidMap.Contains(WidgetName))
+			{
+				WidgetBP->WidgetVariableNameToGuidMap.Add(WidgetName, FGuid::NewGuid());
+			}
+			Configure(Existing);
+			return Existing;
+		};
+
+		EnsureNamedChild(TEXT("HtmlSlot"), UNamedSlot::StaticClass(), [](UWidget* W)
+		{
+			W->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		});
+		EnsureNamedChild(TEXT("TitleLogo"), UImage::StaticClass(), [](UWidget* W)
+		{
+			W->SetVisibility(ESlateVisibility::HitTestInvisible);
+			W->SetRenderOpacity(0.f);
+		});
+		EnsureNamedChild(TEXT("HintText"), UTextBlock::StaticClass(), [](UWidget* W)
+		{
+			W->SetVisibility(ESlateVisibility::HitTestInvisible);
+			W->SetRenderOpacity(TitleHostMotion::HintBreatheBase);
+			if (UTextBlock* TB = Cast<UTextBlock>(W))
+			{
+				TB->SetText(FText::FromString(TEXT("按任意键继续")));
+			}
+		});
+
+		// Drop orphan animations not in Animations array (e.g. prior Python NewObject).
+		TArray<UObject*> ChildAnims;
+		GetObjectsWithOuter(WidgetBP, ChildAnims, EGetObjectsFlags::None);
+		for (UObject* Obj : ChildAnims)
+		{
+			if (UWidgetAnimation* Anim = Cast<UWidgetAnimation>(Obj))
+			{
+				if (!WidgetBP->Animations.Contains(Anim))
+				{
+					Anim->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+				}
+			}
+		}
+
+		TArray<TPair<float, float>> IntroKeys;
+		IntroKeys.Add(TPair<float, float>(0.f, 0.f));
+		IntroKeys.Add(TPair<float, float>(TitleHostMotion::LogoFadeInDuration * 0.5f, 0.5f));
+		IntroKeys.Add(TPair<float, float>(TitleHostMotion::LogoFadeInDuration, 1.f));
+
+		TArray<TPair<float, float>> LogoBreatheKeys;
+		for (int32 i = 0; i <= 4; ++i)
+		{
+			const float T = TitleHostMotion::LogoBreathePeriod * (static_cast<float>(i) / 4.f);
+			LogoBreatheKeys.Add(TPair<float, float>(
+				T, TitleHostMotion::LogoBreatheOpacityAtPhase(static_cast<float>(i) / 4.f)));
+		}
+
+		TArray<TPair<float, float>> HintKeys;
+		for (int32 i = 0; i <= 4; ++i)
+		{
+			const float T = TitleHostMotion::HintBreathePeriod * (static_cast<float>(i) / 4.f);
+			HintKeys.Add(TPair<float, float>(
+				T, TitleHostMotion::HintBreatheOpacityAtPhase(static_cast<float>(i) / 4.f)));
+		}
+
+		UWidgetAnimation* Intro = TitleHostMotion::FindOrCreateOpacityAnimation(
+			WidgetBP, TEXT("Anim_TitleLogoIntro"), TEXT("TitleLogo"), UImage::StaticClass(),
+			IntroKeys, TitleHostMotion::LogoFadeInDuration);
+		UWidgetAnimation* LogoBreathe = TitleHostMotion::FindOrCreateOpacityAnimation(
+			WidgetBP, TEXT("Anim_TitleLogoBreathe"), TEXT("TitleLogo"), UImage::StaticClass(),
+			LogoBreatheKeys, TitleHostMotion::LogoBreathePeriod);
+		UWidgetAnimation* HintBreathe = TitleHostMotion::FindOrCreateOpacityAnimation(
+			WidgetBP, TEXT("Anim_HintBreathe"), TEXT("HintText"), UTextBlock::StaticClass(),
+			HintKeys, TitleHostMotion::HintBreathePeriod);
+
+		if (!Intro || !LogoBreathe || !HintBreathe)
+		{
+			ErrorMsg = TEXT("Failed to author one or more Widget Animations");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		TitleHostMotion::WireTitleMotionGraph(WidgetBP, Intro, LogoBreathe, HintBreathe);
+
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WidgetBP);
+		FKismetEditorUtilities::CompileBlueprint(WidgetBP);
+		if (WidgetBP->Status == BS_Error)
+		{
+			ErrorMsg = TEXT("WBP_TitleScreen compile failed after authoring");
+			DoneEvent->Trigger();
+			return;
+		}
+
+		const FString PackageFilename = FPackageName::LongPackageNameToFilename(
+			WidgetBP->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(WidgetBP->GetOutermost(), WidgetBP, *PackageFilename, SaveArgs);
+
+		TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+		Result->SetStringField(TEXT("path"), AssetPath);
+		Result->SetBoolField(TEXT("intro"), true);
+		Result->SetBoolField(TEXT("logo_breathe"), true);
+		Result->SetBoolField(TEXT("hint_breathe"), true);
+		Result->SetStringField(TEXT("play_graph"), TEXT("Construct->Hint loop + Intro; Intro Finished->Logo Breathe loop"));
+
+		ResponseJson = MakeShareable(new FJsonObject);
+		ResponseJson->SetBoolField(TEXT("success"), true);
+		ResponseJson->SetObjectField(TEXT("result"), Result);
 		DoneEvent->Trigger();
 	});
 
