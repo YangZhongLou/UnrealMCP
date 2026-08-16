@@ -101,7 +101,12 @@ class HtmlUmgParserTest(unittest.TestCase):
             collect(root)
 
         self.assertEqual(tree["status"], "success")
-        self.assertEqual(widgets["BtnResourceToggle"]["text"], "收起 ▾")
+        self.assertEqual(widgets["BtnResourceToggle"]["text"], "明细 ▾")
+        self.assertEqual(widgets["TopBarBg"]["width"], 900.0)
+        self.assertEqual(widgets["TopBarBg"]["height"], 64.0)
+        self.assertEqual(widgets["ResDetailRoot"]["visibility"], "collapsed")
+        self.assertIn("TxtDetailLivelihood", widgets)
+        self.assertIn("TxtDetailSpiritBeast", widgets)
         self.assertEqual(widgets["ContextDockRoot"]["anchors"], "bottom-left")
         self.assertEqual(widgets["BtnExpand"]["visibility"], "collapsed")
         self.assertEqual(widgets["BtnRecruitLingZhiFu"]["visibility"], "collapsed")
@@ -111,6 +116,37 @@ class HtmlUmgParserTest(unittest.TestCase):
         self.assertEqual(widgets["RootCanvas"]["visibility"], "self-hit-test-invisible")
         self.assertIn("BtnForceEndConfirmOk", widgets)
         self.assertIn("BtnForceEndConfirmCancel", widgets)
+
+        # 皮相契约（质感升级）：面板分族 brush + 钮件皮 + 资源图标
+        self.assertEqual(
+            widgets["TopBarBg"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Background_M19_HudBar",
+        )
+        self.assertEqual(
+            widgets["SystemRailBg"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Background_M19_HudRail",
+        )
+        self.assertEqual(
+            widgets["ContextDockBg"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Background_M19_HudPanel",
+        )
+        self.assertEqual(
+            widgets["BtnEndTurn"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Frame_HudBtnGold",
+        )
+        self.assertEqual(
+            widgets["BtnForceEndConfirmOk"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Frame_HudBtnZhu",
+        )
+        self.assertEqual(
+            widgets["BtnRail_1"]["style"]["brush"],
+            "/Game/UI/Texture/T_UI_Frame_HudBtnInk",
+        )
+        self.assertEqual(widgets["BtnEndTurn"]["style"]["color"], "#e8e0d4")
+        for i in range(3):
+            self.assertIn(f"ImgResIcon_{i}", widgets)
+            self.assertTrue(widgets[f"ImgResIcon_{i}"]["style"]["brush"])
+        self.assertNotIn("ImgResIcon_3", widgets)  # 粮食无图标件（已知缺口）
 
     def test_malformed_self_closing_data_umg_errors(self) -> None:
         html = '<div class="hud"></div><img data-umg-type="Image" data-umg-name="Bg" />'

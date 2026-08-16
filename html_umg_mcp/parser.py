@@ -27,6 +27,28 @@ YUBAI_DIM = "#b8b0a4"
 CTA_GOLD = "#d4a843"
 CTA_INK = "#140f0a"
 
+# 顶栏版式新增色（Art/UI/Screens/mockups/main-hud/美术设计.md 为 SSOT，对齐 --muted/--gold/--jing/--ling/--guide）
+MUTED = "#a09682"
+GOLD = "#d2af6e"
+JING = "#dc786e"
+LING = "#78b4be"
+GUIDE = "#c8e0a8"
+
+# 皮件 brush（Content 路径）。军帐家族见 Art/workspace/hud-chrome-llm/_family.md；
+# 须已再导入 Content（export 更新后不得沿用旧像素）。
+# 面板三族按尺度单轨；钮件九宫由生成器 Box(margin 0.14/0.16) 承载。
+BRUSH_PANEL_BAR = "/Game/UI/Texture/T_UI_Background_M19_HudBar"
+BRUSH_PANEL_PANEL = "/Game/UI/Texture/T_UI_Background_M19_HudPanel"
+BRUSH_PANEL_RAIL = "/Game/UI/Texture/T_UI_Background_M19_HudRail"
+BRUSH_BTN_GOLD = "/Game/UI/Texture/T_UI_Frame_HudBtnGold"
+BRUSH_BTN_ZHU = "/Game/UI/Texture/T_UI_Frame_HudBtnZhu"
+BRUSH_BTN_INK = "/Game/UI/Texture/T_UI_Frame_HudBtnInk"
+BRUSH_ICONS = [
+    "/Game/UI/Texture/T_UI_Icon_YuanShi_01",
+    "/Game/UI/Texture/T_UI_Icon_JingXue_01",
+    "/Game/UI/Texture/T_UI_Icon_LingQi_01",
+]
+
 
 def _panel_style() -> dict[str, Any]:
     return {
@@ -79,6 +101,8 @@ def _btn(
     *,
     anchors: str,
     primary: bool = False,
+    skin: str | None = None,
+    text_color: str | None = None,
     visibility: str | None = None,
 ) -> dict[str, Any]:
     style = {
@@ -86,6 +110,15 @@ def _btn(
         "color": CTA_INK if primary else YUBAI,
         "font_size": 14,
     }
+    # 钮件皮（鎏金/朱砂/玄铁玉白文）；有 brush 时生成器忽略 background_color
+    if skin == "gold":
+        style = {"brush": BRUSH_BTN_GOLD, "color": YUBAI, "font_size": 14}
+    elif skin == "zhu":
+        style = {"brush": BRUSH_BTN_ZHU, "color": YUBAI, "font_size": 14}
+    elif skin == "ink":
+        style = {"brush": BRUSH_BTN_INK, "color": YUBAI, "font_size": 14}
+    if text_color:
+        style["color"] = text_color
     widget = {
         "type": "Button",
         "name": name,
@@ -137,6 +170,7 @@ def _image_panel(
     h: float,
     *,
     anchors: str,
+    brush: str | None = None,
 ) -> dict[str, Any]:
     return {
         "type": "Image",
@@ -147,7 +181,7 @@ def _image_panel(
         "height": h,
         "text": "",
         "anchors": anchors,
-        "style": _panel_style(),
+        "style": {"brush": brush} if brush else _panel_style(),
         "children": [],
     }
 
@@ -156,74 +190,175 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
     """Design-space layout for hud-html-mockup at 1920×1080 with corner anchors."""
     turn = texts.get("turn", "1")
     explore = texts.get("explore", "12%")
-    res_title = texts.get("res_title", "宗门资源")
     objective = texts.get("objective", "目标：开拓者建立主城 → 占领邻格 → 建弟子居 → 招采药人")
     status_title = texts.get("status_title", "开拓者 · 格(0,0)")
     status_detail = texts.get("status_detail", "生命 10/10 · AP 2/2")
     cta = texts.get("cta", "建立主城")
 
-    # --- Top-left resource panel ---
-    res_w, res_h = 340.0, 280.0
-    res_x, res_y = SAFE, SAFE
-    res_children: list[dict[str, Any]] = [
-        _image_panel("ResPanelBg", res_x, res_y, res_w, res_h, anchors="top-left"),
-        _label("TxtResTitle", res_title, res_x + 14, res_y + 10, 200, 28, anchors="top-left", color=XIANGHUANG, size=18),
+    # --- 顶栏横条（回合 + 资源一行 + 短目标 + 明细）：规格禁止左柱高板，高 64 ---
+    bar_w, bar_h = 900.0, 64.0
+    bar_x, bar_y = SAFE, SAFE
+    bar_widgets: list[dict[str, Any]] = [
+        _image_panel("TopBarBg", bar_x, bar_y, bar_w, bar_h, anchors="top-left", brush=BRUSH_PANEL_BAR),
+        _label("TxtTurnLabel", "回合", bar_x + 14, bar_y + 14, 82, 13, anchors="top-left", color=MUTED, size=11),
+        _label("TxtTurnValue", turn, bar_x + 14, bar_y + 29, 82, 24, anchors="top-left", color=YUBAI, size=20),
+    ]
+    res_chips = [
+        ("元石", texts.get("yuan_shi", "120"), GOLD),
+        ("精血", texts.get("jing_xue", "8 / 20"), JING),
+        ("灵气", texts.get("ling_qi", "45"), LING),
+        ("粮食", texts.get("liang_shi", "30"), MUTED),
+    ]
+    # 14 左 pad + 82 回合片 + 4 片 margin + 6 flex gap = 106
+    chip_x = bar_x + 106
+    for i, (name, val, color) in enumerate(res_chips):
+        # 图标 + 文案并排（美术设计 §3 精修项）；i=3 粮食无图标件，纯文字（已知缺口）
+        has_icon = i < len(BRUSH_ICONS)
+        if has_icon:
+            bar_widgets.append(
+                _image_panel(
+                    f"ImgResIcon_{i}",
+                    chip_x + 4,
+                    bar_y + 22,
+                    20,
+                    20,
+                    anchors="top-left",
+                    brush=BRUSH_ICONS[i],
+                )
+            )
+        text_x = chip_x + (28 if has_icon else 10)
+        text_w = 74 if has_icon else 78
+        bar_widgets.append(
+            _label(f"TxtResName_{i}", name, text_x, bar_y + 16, text_w, 13, anchors="top-left", color=MUTED, size=11)
+        )
+        bar_widgets.append(
+            _label(f"TxtResVal_{i}", val, text_x, bar_y + 29, text_w, 22, anchors="top-left", color=color, size=17)
+        )
+        chip_x += 104  # 98 片宽（78+20 padding）+ 6 gap
+    toggle_w, toggle_h = 76.0, 36.0
+    toggle_x = bar_x + bar_w - 10 - toggle_w
+    bar_widgets.append(
+        _label(
+            "TxtObjective",
+            objective,
+            chip_x + 20,
+            bar_y + 23,
+            toggle_x - 6 - (chip_x + 20),
+            18,
+            anchors="top-left",
+            color=GUIDE,
+            size=12,
+        )
+    )
+    bar_widgets.append(
         _btn(
             "BtnResourceToggle",
-            "收起 ▾",
-            res_x + res_w - 90,
-            res_y + 8,
-            76,
-            30,
+            "明细 ▾",
+            toggle_x,
+            bar_y + 14,
+            toggle_w,
+            toggle_h,
             anchors="top-left",
-        ),
-    ]
-    rows = [
-        ("元石", texts.get("yuan_shi", "120"), XIANGHUANG),
-        ("精血", texts.get("jing_xue", "8 / 20"), "#e07068"),
-        ("灵气", texts.get("ling_qi", "45"), "#7eb0bc"),
-        ("粮食", texts.get("liang_shi", "30"), YUBAI_DIM),
-    ]
-    row_y = res_y + 48
-    for i, (name, val, color) in enumerate(rows):
-        res_children.append(
-            _label(f"TxtResName_{i}", name, res_x + 14, row_y, 120, 22, anchors="top-left", color=color, size=16)
+            skin="ink",
         )
-        res_children.append(
-            _label(f"TxtResVal_{i}", val, res_x + 160, row_y, 160, 22, anchors="top-left", color=color, size=16)
-        )
-        row_y += 26
-    res_children.append(
-        _label("TxtObjective", objective, res_x + 14, row_y + 12, res_w - 28, 60, anchors="top-left", color="#c8e0a8", size=12)
     )
 
-    # --- Top-right pills ---
-    pill_w, pill_h, pill_gap = 120.0, 56.0, 10.0
+    # --- 顶栏明细下拉（默认收起；BtnResourceToggle 展开，高 ≤220）---
+    detail_h = 84.0
+    detail_root = {
+        "type": "CanvasPanel",
+        "name": "ResDetailRoot",
+        "x": bar_x,
+        "y": bar_y + bar_h + 6,
+        "width": bar_w,
+        "height": detail_h,
+        "text": "",
+        "anchors": "top-left",
+        "z_order": 30,
+        "visibility": "collapsed",
+        "style": {},
+        "children": [
+            _image_panel("ResDetailBg", 0, 0, bar_w, detail_h, anchors="fill", brush=BRUSH_PANEL_BAR),
+            _label(
+                "TxtDetailTip",
+                texts.get("detail_tip", "开局路径：开拓者建立主城 → 占领邻格 → 建弟子居 → 招采药人"),
+                16,
+                12,
+                bar_w - 32,
+                18,
+                anchors="top-left",
+                color=GUIDE,
+                size=13,
+            ),
+            _label(
+                "TxtDetailLivelihood",
+                texts.get("livelihood", "民生：粮 30 / 需 12 · 安稳"),
+                16,
+                36,
+                bar_w - 32,
+                16,
+                anchors="top-left",
+                color=MUTED,
+                size=12,
+            ),
+            _label(
+                "TxtDetailSpiritBeast",
+                texts.get("spirit_beast", "灵兽：0/3"),
+                16,
+                54,
+                bar_w - 32,
+                16,
+                anchors="top-left",
+                color=MUTED,
+                size=12,
+            ),
+        ],
+    }
+
+    # --- 右上：探索 pill（回合已入顶栏，不再单独成片）---
+    pill_w, pill_h = 120.0, 64.0
     explore_x = DESIGN_W - SAFE - pill_w
-    turn_x = explore_x - pill_gap - pill_w
     pill_y = SAFE
     pill_widgets = [
-        _image_panel("TurnPillBg", turn_x, pill_y, pill_w, pill_h, anchors="top-right"),
-        _label("TxtTurnLabel", "回合", turn_x, pill_y + 6, pill_w, 16, anchors="top-right", color=YUBAI_DIM, size=11),
-        _label("TxtTurnValue", turn, turn_x, pill_y + 24, pill_w, 24, anchors="top-right", color=XIANGHUANG, size=18),
-        _image_panel("ExplorePillBg", explore_x, pill_y, pill_w, pill_h, anchors="top-right"),
-        _label("TxtExploreLabel", "探索度", explore_x, pill_y + 6, pill_w, 16, anchors="top-right", color=YUBAI_DIM, size=11),
-        _label("TxtExploreValue", explore, explore_x, pill_y + 24, pill_w, 24, anchors="top-right", color=XIANGHUANG, size=18),
+        _image_panel("ExplorePillBg", explore_x, pill_y, pill_w, pill_h, anchors="top-right", brush=BRUSH_PANEL_PANEL),
+        _label("TxtExploreLabel", "探索度", explore_x, pill_y + 10, pill_w, 13, anchors="top-right", color=MUTED, size=11),
+        _label("TxtExploreValue", explore, explore_x, pill_y + 26, pill_w, 24, anchors="top-right", color=GOLD, size=18),
     ]
 
-    # --- System rail ---
+    # --- 系统轨：头钮（收起/展开）+ 体钮 ×6，整体一块面板 ---
     rail_w, rail_h_btn, rail_gap = 132.0, 36.0, 8.0
     rail_labels = ["系统 ▾", "地图", "百科", "仙学", "内政", "外交", "探索"]
-    rail_top = SAFE + pill_h + pill_gap
-    rail_panel_h = len(rail_labels) * rail_h_btn + (len(rail_labels) - 1) * rail_gap + 16.0
+    rail_top = pill_y + pill_h + 10.0
+    rail_head_h = 36.0
+    rail_panel_h = rail_head_h + 8.0 + (len(rail_labels) - 1) * rail_h_btn + (len(rail_labels) - 2) * rail_gap + 8.0
     rail_x = DESIGN_W - SAFE - rail_w
     rail_widgets: list[dict[str, Any]] = [
-        _image_panel("SystemRailBg", rail_x - 8, rail_top - 8, rail_w + 16, rail_panel_h, anchors="top-right"),
+        _image_panel("SystemRailBg", rail_x, rail_top, rail_w, rail_panel_h, anchors="top-right", brush=BRUSH_PANEL_RAIL),
+        _btn(
+            "BtnRail_0",
+            rail_labels[0],
+            rail_x,
+            rail_top,
+            rail_w,
+            rail_head_h,
+            anchors="top-right",
+            skin="ink",
+            text_color=GOLD,
+        ),
     ]
-    for i, lab in enumerate(rail_labels):
-        y = rail_top + i * (rail_h_btn + rail_gap)
+    for j, lab in enumerate(rail_labels[1:]):
+        y = rail_top + rail_head_h + 8.0 + j * (rail_h_btn + rail_gap)
         rail_widgets.append(
-            _btn(f"BtnRail_{i}", lab, rail_x, y, rail_w, rail_h_btn, anchors="top-right", primary=(i == 0))
+            _btn(
+                f"BtnRail_{j + 1}",
+                lab,
+                rail_x + 8,
+                y,
+                rail_w - 16,
+                rail_h_btn,
+                anchors="top-right",
+                skin="ink",
+            )
         )
 
     # --- Bottom-left context dock ---
@@ -263,7 +398,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
         ("BtnRecruitLingZhiFu", "招灵植夫", False),
     ]
     context_children: list[dict[str, Any]] = [
-        _image_panel("ContextDockBg", 0, 0, dock_w, dock_h, anchors="fill"),
+        _image_panel("ContextDockBg", 0, 0, dock_w, dock_h, anchors="fill", brush=BRUSH_PANEL_PANEL),
         _label(
             "TxtStatusTitle",
             status_title,
@@ -294,6 +429,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
             100,
             32,
             anchors="top-left",
+            skin="ink",
         ),
     ]
     for name, label_text, primary in action_defs:
@@ -306,7 +442,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
                 148,
                 40,
                 anchors="top-left",
-                primary=primary,
+                skin="gold" if primary else "ink",
                 visibility="collapsed",
             )
         )
@@ -326,49 +462,53 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
         }
     ]
 
-    # --- Bottom-right CTA row ---
-    # Order (right→left): EndTurn | ForceEnd | Settings | Pause
+    # --- Bottom-right CTA column (right edges aligned) ---
+    # Bottom→top: EndTurn, [ForceEnd if visible], Settings, Pause.
     # Gap matches HTML .cta-row (10). Force starts collapsed / hidden:
-    # baked positions assume Force takes no space (Settings hugs CTA).
-    # Runtime LayoutHtmlHudBottomRightCta shifts Settings/Pause when Force is Visible.
+    # baked positions assume Force takes no space (Settings sits just above CTA).
+    # Runtime LayoutHtmlHudBottomRightCta shifts Settings/Pause up when Force is Visible.
     cta_w, cta_h = 200.0, 48.0
     quick_w, quick_h, gap = 132.0, 40.0, 10.0
-    force_w = 120.0
+    force_w = 132.0
     cta_x = DESIGN_W - SAFE - cta_w
     cta_y = DESIGN_H - SAFE - cta_h
-    side_y = cta_y + (cta_h - quick_h) * 0.5
-    force_x = cta_x - gap - force_w
-    settings_x = cta_x - gap - quick_w
-    pause_x = settings_x - gap - quick_w
+    side_x = DESIGN_W - SAFE - quick_w
+    force_x = DESIGN_W - SAFE - force_w
+    settings_y = cta_y - gap - quick_h
+    pause_y = settings_y - gap - quick_h
+    force_y = settings_y
     cta_widgets = [
-        _btn("BtnEndTurn", cta, cta_x, cta_y, cta_w, cta_h, anchors="bottom-right", primary=True),
+        _btn("BtnEndTurn", cta, cta_x, cta_y, cta_w, cta_h, anchors="bottom-right", skin="gold"),
         _btn(
             "BtnForceEndTurn",
             "强行结束",
             force_x,
-            side_y,
+            force_y,
             force_w,
             quick_h,
             anchors="bottom-right",
+            skin="gold",
             visibility="collapsed",
         ),
         _btn(
             "BtnQuickSettings",
             "系统",
-            settings_x,
-            side_y,
+            side_x,
+            settings_y,
             quick_w,
             quick_h,
             anchors="bottom-right",
+            skin="gold",
         ),
         _btn(
             "BtnQuickPause",
             "暂停",
-            pause_x,
-            side_y,
+            side_x,
+            pause_y,
             quick_w,
             quick_h,
             anchors="bottom-right",
+            skin="gold",
         ),
     ]
 
@@ -392,6 +532,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
         560,
         260,
         anchors="center",
+        brush=BRUSH_PANEL_PANEL,
     )
     confirm_root = {
         "type": "CanvasPanel",
@@ -438,6 +579,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
                 150,
                 44,
                 anchors="center",
+                skin="ink",
             ),
             _btn(
                 "BtnForceEndConfirmOk",
@@ -447,13 +589,14 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
                 150,
                 44,
                 anchors="center",
-                primary=True,
+                skin="zhu",
             ),
         ],
     }
 
     children = (
-        res_children
+        bar_widgets
+        + [detail_root]
         + pill_widgets
         + rail_widgets
         + dock_widgets
