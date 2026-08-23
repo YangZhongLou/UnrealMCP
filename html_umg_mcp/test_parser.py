@@ -108,6 +108,8 @@ class HtmlUmgParserTest(unittest.TestCase):
         self.assertIn("TxtDetailLivelihood", widgets)
         self.assertIn("TxtDetailSpiritBeast", widgets)
         self.assertEqual(widgets["ContextDockRoot"]["anchors"], "bottom-left")
+        self.assertEqual(widgets["ContextDockRoot"]["height"], 132.0)
+        self.assertNotIn("visibility", widgets["BtnChipFound"])
         self.assertEqual(widgets["BtnExpand"]["visibility"], "collapsed")
         self.assertEqual(widgets["BtnRecruitLingZhiFu"]["visibility"], "collapsed")
         self.assertEqual(widgets["BtnForceEndTurn"]["visibility"], "collapsed")

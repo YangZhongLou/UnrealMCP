@@ -364,7 +364,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
     # --- Bottom-left context dock ---
     # All gameplay chips are authored in the WBP and start Collapsed. C++ only
     # toggles/reflows these named controls; it never constructs visual fallback.
-    dock_w, dock_h = 520.0, 72.0
+    dock_w, dock_h = 520.0, 132.0
     dock_x = SAFE
     dock_y = DESIGN_H - SAFE - dock_h
     action_defs = [
@@ -443,7 +443,7 @@ def build_hud_mockup_tree(texts: dict[str, str]) -> dict[str, Any]:
                 40,
                 anchors="top-left",
                 skin="gold" if primary else "ink",
-                visibility="collapsed",
+                visibility=None if name == "BtnChipFound" else "collapsed",
             )
         )
     dock_widgets = [
