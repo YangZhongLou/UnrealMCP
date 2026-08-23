@@ -76,12 +76,16 @@ namespace HtmlUmgGen
 			if (C >= 'A' && C <= 'F') { return C - 'A' + 10; }
 			return 0;
 		};
+		// hex 是 sRGB 设计值：须经 FromSRGBColor 转 linear，否则深色平涂渲染偏亮（白模感）
 		if (H.Len() == 6)
 		{
 			const int32 R = Nibble(H[0]) * 16 + Nibble(H[1]);
 			const int32 G = Nibble(H[2]) * 16 + Nibble(H[3]);
 			const int32 B = Nibble(H[4]) * 16 + Nibble(H[5]);
-			return FLinearColor(R / 255.0f, G / 255.0f, B / 255.0f, DefaultA);
+			FLinearColor C = FLinearColor::FromSRGBColor(FColor(
+				static_cast<uint8>(R), static_cast<uint8>(G), static_cast<uint8>(B)));
+			C.A = DefaultA;
+			return C;
 		}
 		if (H.Len() == 8)
 		{
@@ -89,7 +93,10 @@ namespace HtmlUmgGen
 			const int32 G = Nibble(H[2]) * 16 + Nibble(H[3]);
 			const int32 B = Nibble(H[4]) * 16 + Nibble(H[5]);
 			const int32 A = Nibble(H[6]) * 16 + Nibble(H[7]);
-			return FLinearColor(R / 255.0f, G / 255.0f, B / 255.0f, A / 255.0f);
+			FLinearColor C = FLinearColor::FromSRGBColor(FColor(
+				static_cast<uint8>(R), static_cast<uint8>(G), static_cast<uint8>(B)));
+			C.A = A / 255.0f;
+			return C;
 		}
 		return FLinearColor(0.08f, 0.07f, 0.06f, DefaultA);
 	}
