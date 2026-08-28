@@ -1,6 +1,7 @@
 #include "Umg/UmgSerializer.h"
 #include "Widgets/Layout/SBox.h"
 #include "Styling/SlateTypes.h"
+#include "Styling/CoreStyle.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUmgSerializer, Log, All);
 
@@ -15,7 +16,7 @@ static FWidgetNodeDesc ParseNode(const TSharedPtr<FJsonObject>& Obj)
         TSharedPtr<FJsonObject> Props = Obj->GetObjectField(TEXT("properties"));
         for (const auto& Pair : Props->Values)
         {
-            Desc.Properties.Add(Pair.Key, Pair.Value->AsString());
+            Desc.Properties.Add(FString(Pair.Key), Pair.Value->AsString());
         }
     }
 
@@ -164,7 +165,7 @@ TSharedPtr<SWidget> UmgSerializer::BuildTextBlock(const FWidgetNodeDesc& Desc)
 
     return SNew(STextBlock)
         .Text(FText::FromString(Text))
-        .Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), FontSize))
+        .Font(FCoreStyle::GetDefaultFontStyle("Regular", FontSize))
         .ColorAndOpacity(Color);
 }
 

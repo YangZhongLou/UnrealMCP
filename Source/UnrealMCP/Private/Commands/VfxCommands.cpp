@@ -1180,16 +1180,17 @@ FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params)
 
         if (InitialParams.IsValid())
         {
-            for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : InitialParams->Values)
+            for (const auto& Pair : InitialParams->Values)
             {
+                const FString Key(Pair.Key);
                 FString Err;
-                if (SetNiagaraSystemUserParameter(NewSystem, FName(*Pair.Key), Pair.Value, Err))
+                if (SetNiagaraSystemUserParameter(NewSystem, FName(*Key), Pair.Value, Err))
                 {
-                    ParametersSet.Add(MakeShareable(new FJsonValueString(Pair.Key)));
+                    ParametersSet.Add(MakeShareable(new FJsonValueString(Key)));
                 }
                 else
                 {
-                    UE_LOG(LogMCPVfxCommands, Warning, TEXT("Failed to set initial parameter %s: %s"), *Pair.Key, *Err);
+                    UE_LOG(LogMCPVfxCommands, Warning, TEXT("Failed to set initial parameter %s: %s"), *Key, *Err);
                 }
             }
         }
@@ -1233,11 +1234,12 @@ FString HandleDuplicateNiagaraSystem(const TSharedPtr<FJsonObject>& Params)
                 NiagaraComp->SetAsset(NewSystem);
                 if (InitialParams.IsValid())
                 {
-                    for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : InitialParams->Values)
+                    for (const auto& Pair : InitialParams->Values)
                     {
                         FString TypeStr;
                         FString Err;
-                        SetNiagaraComponentVariable(NiagaraComp, FName(*Pair.Key), Pair.Value, TypeStr, Err);
+                        const FString Key(Pair.Key);
+                        SetNiagaraComponentVariable(NiagaraComp, FName(*Key), Pair.Value, TypeStr, Err);
                     }
                 }
                 NiagaraComp->Activate();
